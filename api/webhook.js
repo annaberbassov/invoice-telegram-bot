@@ -1,7 +1,8 @@
 const fetch = require('node-fetch');
 
-const BOT_TOKEN = '8237743639:AAGU-wu_6k1p-syWu84uUuspsq4pjh5lqeY';
-const CHAT_ID = '-4900809502';
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const CHAT_ID = process.env.CHAT_ID;
+
 
 export default async function handler(req, res) {
   // SOFORTIGE Antwort (< 50ms)
