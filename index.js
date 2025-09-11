@@ -16,7 +16,7 @@ server.listen(PORT, () => {
 
 // Gespeicherte Erinnerungen und Rechnungsdaten  
 const reminders = new Map();
-const invoiceData = new Map(); // Speichert PDF-Infos
+const invoiceData = new Map();
 
 // Test-Rechnung erstellen
 bot.command('rechnung', (ctx) => {
@@ -36,18 +36,18 @@ bot.command('rechnung', (ctx) => {
   sendInvoiceMessage(ctx, testInvoice);
 });
 
-// Echte Rechnung von Apps Script - NEUE VERSION
+// Echte Rechnung von Apps Script
 bot.command('newInvoice', (ctx) => {
   const fullText = ctx.message.text;
   const parts = fullText.match(/"([^"]+)"/g);
   
   if (parts && parts.length >= 6) {
-    const fileName = parts[0].replace(/"/g, '');
+    const fileName = parts.replace(/"/g, '');
     const invoiceType = parts[1].replace(/"/g, '');
-    const project = parts[2].replace(/"/g, '');
-    const date = parts[3].replace(/"/g, '');
-    const fileId = parts[4].replace(/"/g, '');
-    const driveUrl = parts[5].replace(/"/g, '');
+    const project = parts.replace(/"/g, '');
+    const date = parts.replace(/"/g, '');
+    const fileId = parts.replace(/"/g, '');
+    const driveUrl = parts.replace(/"/g, '');
     
     const invoice = {
       id: fileId,
@@ -66,15 +66,13 @@ bot.command('newInvoice', (ctx) => {
     // Fallback für alte Version
     const args = ctx.message.text.split(' ');
     const invoiceNumber = args[1] || Date.now();
-    const amount = args[2] || '0.00';
-    const customer = args[3] || 'Kunde';
     
     const testInvoice = {
       id: invoiceNumber,
       fileName: `Rechnung_${invoiceNumber}`,
       type: 'rechnung',
-      project: customer,
-      date: new Date().toISOString().split('T')[0],
+      project: 'Unbekannt',
+      date: new Date().toISOString().split('T'),
       driveUrl: 'https://drive.google.com',
       reminderSet: false,
       reminderTime: null
@@ -85,8 +83,8 @@ bot.command('newInvoice', (ctx) => {
   }
 });
 
-// EINE einzige Rechnungs-Nachricht senden/updaten
-function sendInvoiceMessage(ctx, invoice, messageId = null) {
+// EINE einzige Rechnungs-Nachricht senden
+function sendInvoiceMessage(ctx, invoice) {
   const shortName = invoice.fileName.length > 40 ? 
                    invoice.fileName.substring(0, 37) + '...' : 
                    invoice.fileName;
@@ -124,28 +122,11 @@ function sendInvoiceMessage(ctx, invoice, messageId = null) {
   
   const keyboard = Markup.inlineKeyboard(buttons);
   
-  if (messageId) {
-    // Nachricht updaten
-    ctx.telegram.editMessageText(ctx.chat.id, messageId, null, text, {
-      ...keyboard, 
-      parse_mode: 'Markdown',
-      disable_web_page_preview: true
-    }).catch(() => {
-      // Fallback falls Edit nicht funktioniert
-      ctx.reply(text, {
-        ...keyboard, 
-        parse_mode: 'Markdown',
-        disable_web_page_preview: true
-      });
-    });
-  } else {
-    // Neue Nachricht senden
-    ctx.reply(text, {
-      ...keyboard, 
-      parse_mode: 'Markdown',
-      disable_web_page_preview: true
-    });
-  }
+  ctx.reply(text, {
+    ...keyboard, 
+    parse_mode: 'Markdown',
+    disable_web_page_preview: true
+  });
 }
 
 // Bezahlt-Button
@@ -163,13 +144,6 @@ bot.action(/^paid_(.+)/, async (ctx) => {
       { parse_mode: 'Markdown' }
     );
     invoiceData.delete(invoiceId);
-    
-    // Erinnerung löschen falls vorhanden
-    for (let [reminderId, reminder] of reminders) {
-      if (reminder.invoiceId === invoiceId) {
-        reminders.delete(reminderId);
-      }
-    }
   }
 });
 
@@ -183,7 +157,7 @@ bot.action(/^problem_(.+)/, async (ctx) => {
     await ctx.editMessageText(
       `❌ *Problem mit Rechnung*\n\n` +
       `📄 *Datei:* ${invoice.fileName}\n` +
-      `⚠️ *Status:* Problemfall - manuelle Bearbeitung erforderlich\n` +
+      `⚠️ *Status:* Problemfall\n` +
       `📅 *Gemeldet am:* ${new Date().toLocaleDateString('de-DE')}`,
       { parse_mode: 'Markdown' }
     );
@@ -204,20 +178,6 @@ bot.action(/^reminder_(.+)/, async (ctx) => {
   );
 });
 
-// Erinnerung ändern
-bot.action(/^change_reminder_(.+)/, async (ctx) => {
-  const invoiceId = ctx.match[1];
-  await ctx.answerCbQuery();
-  
-  const weekCalendar = createWeekCalendar(invoiceId);
-  
-  await ctx.reply(
-    `⏰ *Erinnerung ändern*\n\n` +
-    `📅 Wähle neuen Tag:`,
-    { ...weekCalendar, parse_mode: 'Markdown' }
-  );
-});
-
 // Wochenkalender erstellen
 function createWeekCalendar(invoiceId) {
   const today = new Date();
@@ -233,7 +193,7 @@ function createWeekCalendar(invoiceId) {
     const dayName = weekDays[date.getDay()];
     const day = date.getDate();
     const month = months[date.getMonth()];
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = date.toISOString().split('T');
     
     let buttonText;
     if (i === 0) buttonText = `📅 Heute (${day}. ${month})`;
@@ -251,7 +211,7 @@ function createWeekCalendar(invoiceId) {
 // Datum ausgewählt - Uhrzeit wählen
 bot.action(/^date_(.+)_(.+)/, async (ctx) => {
   const invoiceId = ctx.match[1];
-  const selectedDate = ctx.match[2];
+  const selectedDate = ctx.match;
   
   await ctx.answerCbQuery();
   
@@ -285,8 +245,8 @@ function createTimeSelection(invoiceId, selectedDate) {
 // Uhrzeit ausgewählt - Erinnerung speichern
 bot.action(/^time_(.+)_(.+)_(.+)/, async (ctx) => {
   const invoiceId = ctx.match[1];
-  const selectedDate = ctx.match[2];
-  const selectedTime = ctx.match[3];
+  const selectedDate = ctx.match;
+  const selectedTime = ctx.match;
   
   await ctx.answerCbQuery('Erinnerung gespeichert! ⏰');
   
@@ -317,8 +277,7 @@ bot.action(/^time_(.+)_(.+)_(.+)/, async (ctx) => {
     await ctx.reply(
       `✅ *Erinnerung gespeichert*\n\n` +
       `📄 *Rechnung:* ${invoice ? invoice.fileName : invoiceId}\n` +
-      `⏰ *Erinnerung:* ${displayTime}\n\n` +
-      `Der Button in der ursprünglichen Nachricht zeigt jetzt die Erinnerungszeit an.`,
+      `⏰ *Erinnerung:* ${displayTime}`,
       { parse_mode: 'Markdown' }
     );
     
@@ -332,8 +291,6 @@ bot.action(/^time_(.+)_(.+)_(.+)/, async (ctx) => {
 function scheduleReminder(ctx, invoiceId, reminderDateTime) {
   const timeUntilReminder = reminderDateTime.getTime() - Date.now();
   
-  console.log(`Erinnerung für ${invoiceId} in ${Math.round(timeUntilReminder / 1000 / 60)} Minuten`);
-  
   if (timeUntilReminder > 0) {
     const reminderId = `${invoiceId}_${Date.now()}`;
     reminders.set(reminderId, { invoiceId, chatId: ctx.chat.id, reminderDateTime });
@@ -342,8 +299,6 @@ function scheduleReminder(ctx, invoiceId, reminderDateTime) {
       sendReminder(ctx.telegram, ctx.chat.id, invoiceId, reminderDateTime);
       reminders.delete(reminderId);
     }, timeUntilReminder);
-  } else {
-    console.log('Erinnerungszeit liegt in der Vergangenheit');
   }
 }
 
@@ -392,8 +347,7 @@ bot.action(/^snooze_(.+)/, async (ctx) => {
   
   await ctx.editMessageText(
     `⏰ *Erinnerung verschoben*\n\n` +
-    `🕐 *Nächste Erinnerung:* ${snoozeTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr\n\n` +
-    `Du wirst in 2 Stunden erneut erinnert! 🔔`,
+    `🕐 *Nächste Erinnerung:* ${snoozeTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`,
     { parse_mode: 'Markdown' }
   );
 });
@@ -418,40 +372,6 @@ bot.start((ctx) => {
 bot.launch();
 
 console.log('🤖 Telegram Rechnungs-Bot mit optimierter UI gestartet!');
-console.log(`🌐 HTTP Server läuft auf Port ${PORT}`);
-
-// Graceful stop
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
-  
-  ctx.reply(
-    `⏰ *Deine aktiven Erinnerungen:*\n\n${reminderList.join('\n\n')}`,
-    { parse_mode: 'Markdown' }
-  );
-});
-
-// Ignore Handler
-bot.action('ignore', async (ctx) => {
-  await ctx.answerCbQuery('Erinnerung ignoriert');
-  await ctx.editMessageText('🔕 Erinnerung wurde ignoriert.');
-});
-
-// Bot Start
-bot.start((ctx) => {
-  ctx.reply(
-    `🤖 *Rechnungs-Bot gestartet!*\n\n` +
-    `📋 Verfügbare Kommandos:\n` +
-    `/rechnung - Test-Rechnung erstellen\n` +
-    `/erinnerungen - Aktive Erinnerungen anzeigen\n\n` +
-    `💡 Der Bot ist bereit für deine Rechnungen!`,
-    { parse_mode: 'Markdown' }
-  );
-});
-
-bot.launch();
-
-console.log('🤖 Telegram Rechnungs-Bot mit Wochenkalender gestartet!');
 console.log(`🌐 HTTP Server läuft auf Port ${PORT}`);
 
 // Graceful stop
