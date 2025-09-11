@@ -38,29 +38,66 @@ bot.command('rechnung', (ctx) => {
   );
 });
 
-// Echte Rechnung (für Apps Script Integration)
+// Echte Rechnung (für Apps Script Integration) - VERBESSERT
 bot.command('newInvoice', (ctx) => {
-  const args = ctx.message.text.split(' ');
-  const invoiceNumber = args[1] || Date.now();
-  const amount = args[2] || '0.00';
-  const customer = args[3] || 'Kunde';
+  const fullText = ctx.message.text;
   
-  const buttons = Markup.inlineKeyboard([
-    [
-      Markup.button.callback('💸 Bezahlt', `paid_${invoiceNumber}`),
-      Markup.button.callback('⏰ Erinnerung setzen', `reminder_${invoiceNumber}`)
-    ]
-  ]);
+  // Parse die strukturierten Daten
+  const parts = fullText.match(/"([^"]+)"/g);
   
-  ctx.reply(
-    `📧 *Neue Rechnung eingegangen*\n\n` +
-    `🧾 Nummer: *${invoiceNumber}*\n` +
-    `💰 Betrag: *€${amount}*\n` +
-    `👤 Kunde: *${customer}*\n\n` +
-    `Bitte Aktion wählen:`,
-    { ...buttons, parse_mode: 'Markdown' }
-  );
+  if (parts && parts.length >= 6) {
+    const fileName = parts.replace(/"/g, '');
+    const invoiceType = parts[1].replace(/"/g, '');
+    const project = parts.replace(/"/g, '');
+    const date = parts.replace(/"/g, '');
+    const fileId = parts.replace(/"/g, '');
+    const driveUrl = parts.replace(/"/g, '');
+    
+    const buttons = Markup.inlineKeyboard([
+      [
+        Markup.button.callback('💸 Bezahlt', `paid_${fileId}`),
+        Markup.button.callback('⏰ Erinnerung setzen', `reminder_${fileId}`)
+      ],
+      [
+        Markup.button.callback('📁 Drive öffnen', `drive_${fileId}`)
+      ]
+    ]);
+    
+    ctx.reply(
+      `📧 *Neue Rechnung eingegangen*\n\n` +
+      `📄 *Datei:* ${fileName}\n` +
+      `💰 *Typ:* ${invoiceType}\n` +
+      `🏢 *Projekt:* ${project}\n` +
+      `📅 *Datum:* ${date}\n` +
+      `🔗 *Drive-Link:* [Datei öffnen](${driveUrl})\n\n` +
+      `Bitte Aktion wählen:`,
+      { ...buttons, parse_mode: 'Markdown', disable_web_page_preview: true }
+    );
+  } else {
+    // Fallback für alte Version
+    const args = ctx.message.text.split(' ');
+    const invoiceNumber = args[1] || Date.now();
+    const amount = args || '0.00';
+    const customer = args || 'Kunde';
+    
+    const buttons = Markup.inlineKeyboard([
+      [
+        Markup.button.callback('💸 Bezahlt', `paid_${invoiceNumber}`),
+        Markup.button.callback('⏰ Erinnerung setzen', `reminder_${invoiceNumber}`)
+      ]
+    ]);
+    
+    ctx.reply(
+      `📧 *Neue Rechnung eingegangen*\n\n` +
+      `🧾 Nummer: *${invoiceNumber}*\n` +
+      `💰 Betrag: *€${amount}*\n` +
+      `👤 Kunde: *${customer}*\n\n` +
+      `Bitte Aktion wählen:`,
+      { ...buttons, parse_mode: 'Markdown' }
+    );
+  }
 });
+
 
 // Bezahlt-Button
 bot.action(/^paid_(.+)/, async (ctx) => {
