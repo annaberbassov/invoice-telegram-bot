@@ -7,373 +7,220 @@ const PORT = process.env.PORT || 3000;
 // HTTP Server für Render
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Telegram Bot is running! 🤖\n');
+  res.end('Telegram Bot is running!\n');
 });
 
 server.listen(PORT, () => {
-  console.log(`🌐 HTTP Server läuft auf Port ${PORT}`);
+  console.log(`HTTP Server on port ${PORT}`);
 });
 
-// Gespeicherte Erinnerungen und Rechnungsdaten  
-const reminders = new Map();
+// Gespeicherte Daten
 const invoiceData = new Map();
+const reminders = new Map();
 
-// Test-Rechnung erstellen
+// Test-Rechnung
 bot.command('rechnung', (ctx) => {
-  const invoiceId = `TEST-${Date.now()}`;
-  const testInvoice = {
-    id: invoiceId,
-    fileName: 'test_rechnung_2025_09_11.pdf',
-    type: 'rechnung',
-    project: 'Test Projekt',
+  const invoice = {
+    id: Date.now(),
+    fileName: 'test_rechnung.pdf',
+    type: 'rechnung', 
+    project: 'Test',
     date: '2025_09_11',
-    driveUrl: 'https://drive.google.com/file/d/test123/view',
-    reminderSet: false,
-    reminderTime: null
+    driveUrl: 'https://drive.google.com'
   };
   
-  invoiceData.set(invoiceId, testInvoice);
-  sendInvoiceMessage(ctx, testInvoice);
-});
-
-// Echte Rechnung von Apps Script
-bot.command('newInvoice', (ctx) => {
-  const fullText = ctx.message.text;
-  const parts = fullText.match(/"([^"]+)"/g);
+  invoiceData.set(invoice.id, invoice);
   
-  if (parts && parts.length >= 6) {
-    const fileName = parts.replace(/"/g, '');
-    const invoiceType = parts[1].replace(/"/g, '');
-    const project = parts.replace(/"/g, '');
-    const date = parts.replace(/"/g, '');
-    const fileId = parts.replace(/"/g, '');
-    const driveUrl = parts.replace(/"/g, '');
-    
-    const invoice = {
-      id: fileId,
-      fileName: fileName,
-      type: invoiceType,
-      project: project,
-      date: date,
-      driveUrl: driveUrl,
-      reminderSet: false,
-      reminderTime: null
-    };
-    
-    invoiceData.set(fileId, invoice);
-    sendInvoiceMessage(ctx, invoice);
-  } else {
-    // Fallback für alte Version
-    const args = ctx.message.text.split(' ');
-    const invoiceNumber = args[1] || Date.now();
-    
-    const testInvoice = {
-      id: invoiceNumber,
-      fileName: `Rechnung_${invoiceNumber}`,
-      type: 'rechnung',
-      project: 'Unbekannt',
-      date: new Date().toISOString().split('T'),
-      driveUrl: 'https://drive.google.com',
-      reminderSet: false,
-      reminderTime: null
-    };
-    
-    invoiceData.set(invoiceNumber, testInvoice);
-    sendInvoiceMessage(ctx, testInvoice);
-  }
-});
-
-// EINE einzige Rechnungs-Nachricht senden
-function sendInvoiceMessage(ctx, invoice) {
-  const shortName = invoice.fileName.length > 40 ? 
-                   invoice.fileName.substring(0, 37) + '...' : 
-                   invoice.fileName;
-  
-  let text = `📧 *Neue Rechnung eingegangen*\n\n` +
-             `📄 *Datei:* ${shortName}\n` +
-             `💰 *Typ:* ${invoice.type}\n` +
-             `🏢 *Projekt:* ${invoice.project}\n` +
-             `📅 *Datum:* ${invoice.date}\n` +
-             `🔗 [📁 Drive-Link](${invoice.driveUrl})\n\n`;
-  
-  // Erinnerung-Status hinzufügen
-  if (invoice.reminderSet && invoice.reminderTime) {
-    text += `⏰ *Erinnerung gesetzt:* ${invoice.reminderTime}\n\n`;
-  }
-  
-  text += `Bitte Aktion wählen:`;
-  
-  // Dynamische Buttons
-  const buttons = [];
-  buttons.push([
-    Markup.button.callback('💸 Bezahlt', `paid_${invoice.id}`),
-    Markup.button.callback('❌ Problem', `problem_${invoice.id}`)
+  const buttons = Markup.inlineKeyboard([
+    [
+      Markup.button.callback('💸 Bezahlt', `paid_${invoice.id}`),
+      Markup.button.callback('❌ Problem', `problem_${invoice.id}`)
+    ],
+    [
+      Markup.button.callback('⏰ Erinnerung setzen', `reminder_${invoice.id}`)
+    ]
   ]);
   
-  if (invoice.reminderSet) {
-    buttons.push([
-      Markup.button.callback(`⏰ Erinnerung: ${invoice.reminderTime}`, `change_reminder_${invoice.id}`)
-    ]);
-  } else {
-    buttons.push([
-      Markup.button.callback('⏰ Erinnerung setzen', `reminder_${invoice.id}`)
-    ]);
-  }
-  
-  const keyboard = Markup.inlineKeyboard(buttons);
-  
-  ctx.reply(text, {
-    ...keyboard, 
-    parse_mode: 'Markdown',
-    disable_web_page_preview: true
-  });
-}
+  ctx.reply(
+    `📧 *Test-Rechnung*\n\n` +
+    `📄 Datei: ${invoice.fileName}\n` +
+    `💰 Typ: ${invoice.type}\n` +
+    `🏢 Projekt: ${invoice.project}\n` +
+    `📅 Datum: ${invoice.date}\n\n` +
+    `Aktion wählen:`,
+    { ...buttons, parse_mode: 'Markdown' }
+  );
+});
 
-// Bezahlt-Button
+// Apps Script Integration
+bot.command('newInvoice', (ctx) => {
+  const text = ctx.message.text;
+  const parts = text.match(/"([^"]+)"/g);
+  
+  if (parts && parts.length >= 6) {
+    const invoice = {
+      id: parts[4].replace(/"/g, ''),
+      fileName: parts[0].replace(/"/g, ''),
+      type: parts[1].replace(/"/g, ''),
+      project: parts[2].replace(/"/g, ''),
+      date: parts[3].replace(/"/g, ''),
+      driveUrl: parts[5].replace(/"/g, '')
+    };
+    
+    invoiceData.set(invoice.id, invoice);
+    
+    const buttons = Markup.inlineKeyboard([
+      [
+        Markup.button.callback('💸 Bezahlt', `paid_${invoice.id}`),
+        Markup.button.callback('❌ Problem', `problem_${invoice.id}`)
+      ],
+      [
+        Markup.button.callback('⏰ Erinnerung setzen', `reminder_${invoice.id}`)
+      ]
+    ]);
+    
+    ctx.reply(
+      `📧 *Neue Rechnung*\n\n` +
+      `📄 Datei: ${invoice.fileName.substring(0, 40)}...\n` +
+      `💰 Typ: ${invoice.type}\n` +
+      `🏢 Projekt: ${invoice.project}\n` +
+      `📅 Datum: ${invoice.date}\n` +
+      `🔗 [Drive-Link](${invoice.driveUrl})\n\n` +
+      `Aktion wählen:`,
+      { ...buttons, parse_mode: 'Markdown', disable_web_page_preview: true }
+    );
+  }
+});
+
+// Bezahlt Button
 bot.action(/^paid_(.+)/, async (ctx) => {
   const invoiceId = ctx.match[1];
-  await ctx.answerCbQuery('Rechnung als bezahlt markiert! ✅');
+  await ctx.answerCbQuery('Bezahlt markiert!');
   
   const invoice = invoiceData.get(invoiceId);
-  if (invoice) {
-    await ctx.editMessageText(
-      `✅ *Rechnung bezahlt*\n\n` +
-      `📄 *Datei:* ${invoice.fileName}\n` +
-      `📅 *Bezahlt am:* ${new Date().toLocaleDateString('de-DE')}\n` +
-      `⏰ *Zeit:* ${new Date().toLocaleTimeString('de-DE')}`,
-      { parse_mode: 'Markdown' }
-    );
-    invoiceData.delete(invoiceId);
-  }
+  await ctx.editMessageText(
+    `✅ *Rechnung bezahlt*\n\n` +
+    `📄 Datei: ${invoice ? invoice.fileName : invoiceId}\n` +
+    `📅 Bezahlt: ${new Date().toLocaleDateString('de-DE')}`,
+    { parse_mode: 'Markdown' }
+  );
 });
 
-// Problem-Button
+// Problem Button  
 bot.action(/^problem_(.+)/, async (ctx) => {
   const invoiceId = ctx.match[1];
-  await ctx.answerCbQuery('Problem markiert! ❌');
+  await ctx.answerCbQuery('Problem markiert!');
   
   const invoice = invoiceData.get(invoiceId);
-  if (invoice) {
-    await ctx.editMessageText(
-      `❌ *Problem mit Rechnung*\n\n` +
-      `📄 *Datei:* ${invoice.fileName}\n` +
-      `⚠️ *Status:* Problemfall\n` +
-      `📅 *Gemeldet am:* ${new Date().toLocaleDateString('de-DE')}`,
-      { parse_mode: 'Markdown' }
-    );
-  }
+  await ctx.editMessageText(
+    `❌ *Problem mit Rechnung*\n\n` +
+    `📄 Datei: ${invoice ? invoice.fileName : invoiceId}\n` +
+    `⚠️ Status: Problemfall`,
+    { parse_mode: 'Markdown' }
+  );
 });
 
-// Erinnerung setzen - Kalender anzeigen
+// Erinnerung Button - Kalender
 bot.action(/^reminder_(.+)/, async (ctx) => {
   const invoiceId = ctx.match[1];
   await ctx.answerCbQuery();
   
-  const weekCalendar = createWeekCalendar(invoiceId);
-  
-  await ctx.reply(
-    `⏰ *Erinnerung für Rechnung*\n\n` +
-    `📅 Wähle den Tag (nächste 7 Tage):`,
-    { ...weekCalendar, parse_mode: 'Markdown' }
-  );
-});
-
-// Wochenkalender erstellen
-function createWeekCalendar(invoiceId) {
   const today = new Date();
-  const weekDays = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
-  const months = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
-  
   const buttons = [];
   
   for (let i = 0; i < 7; i++) {
     const date = new Date(today);
     date.setDate(today.getDate() + i);
     
-    const dayName = weekDays[date.getDay()];
     const day = date.getDate();
-    const month = months[date.getMonth()];
-    const dateStr = date.toISOString().split('T');
+    const month = date.getMonth() + 1;
+    const dateStr = date.toISOString().split('T')[0];
     
-    let buttonText;
-    if (i === 0) buttonText = `📅 Heute (${day}. ${month})`;
-    else if (i === 1) buttonText = `📅 Morgen (${day}. ${month})`;
-    else buttonText = `📅 ${dayName} ${day}. ${month}`;
+    let text;
+    if (i === 0) text = `📅 Heute (${day}.${month})`;
+    else if (i === 1) text = `📅 Morgen (${day}.${month})`;
+    else text = `📅 ${day}.${month}`;
     
     buttons.push([
-      Markup.button.callback(buttonText, `date_${invoiceId}_${dateStr}`)
+      Markup.button.callback(text, `date_${invoiceId}_${dateStr}`)
     ]);
   }
   
-  return Markup.inlineKeyboard(buttons);
-}
+  const calendar = Markup.inlineKeyboard(buttons);
+  
+  ctx.reply(
+    `⏰ *Erinnerung setzen*\n\nWähle den Tag:`,
+    { ...calendar, parse_mode: 'Markdown' }
+  );
+});
 
-// Datum ausgewählt - Uhrzeit wählen
+// Datum gewählt - Uhrzeit
 bot.action(/^date_(.+)_(.+)/, async (ctx) => {
   const invoiceId = ctx.match[1];
-  const selectedDate = ctx.match;
+  const selectedDate = ctx.match[2];
   
   await ctx.answerCbQuery();
   
-  const timeButtons = createTimeSelection(invoiceId, selectedDate);
-  const dateObj = new Date(selectedDate + 'T12:00:00.000Z');
-  const formattedDate = dateObj.toLocaleDateString('de-DE');
-  
-  await ctx.editMessageText(
-    `⏰ *Erinnerung für Rechnung*\n\n` +
-    `📅 *Datum:* ${formattedDate}\n\n` +
-    `🕐 Wähle die Uhrzeit:`,
-    { ...timeButtons, parse_mode: 'Markdown' }
-  );
-});
-
-// Uhrzeiten-Auswahl erstellen
-function createTimeSelection(invoiceId, selectedDate) {
   const times = ['09:00', '10:00', '11:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'];
   
   const timeButtons = times.map(time => [
-    Markup.button.callback(`🕐 ${time} Uhr`, `time_${invoiceId}_${selectedDate}_${time}`)
+    Markup.button.callback(`🕐 ${time}`, `time_${invoiceId}_${selectedDate}_${time}`)
   ]);
   
-  timeButtons.push([
-    Markup.button.callback('🔙 Zurück zur Datumsauswahl', `reminder_${invoiceId}`)
-  ]);
+  const timeKeyboard = Markup.inlineKeyboard(timeButtons);
   
-  return Markup.inlineKeyboard(timeButtons);
-}
+  const dateObj = new Date(selectedDate);
+  const formattedDate = dateObj.toLocaleDateString('de-DE');
+  
+  ctx.editMessageText(
+    `⏰ *Erinnerung setzen*\n\n📅 Datum: ${formattedDate}\n\nWähle die Zeit:`,
+    { ...timeKeyboard, parse_mode: 'Markdown' }
+  );
+});
 
-// Uhrzeit ausgewählt - Erinnerung speichern
+// Zeit gewählt - Erinnerung speichern
 bot.action(/^time_(.+)_(.+)_(.+)/, async (ctx) => {
   const invoiceId = ctx.match[1];
-  const selectedDate = ctx.match;
-  const selectedTime = ctx.match;
+  const selectedDate = ctx.match[2];
+  const selectedTime = ctx.match[3];
   
-  await ctx.answerCbQuery('Erinnerung gespeichert! ⏰');
+  await ctx.answerCbQuery('Erinnerung gesetzt!');
   
-  try {
-    const [hours, minutes] = selectedTime.split(':');
-    const reminderDateTime = new Date(selectedDate + 'T00:00:00.000Z');
-    reminderDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-    
-    const formattedDate = reminderDateTime.toLocaleDateString('de-DE');
-    const formattedTime = reminderDateTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-    const displayTime = `${formattedDate} ${formattedTime}`;
-    
-    // Invoice-Daten updaten
-    const invoice = invoiceData.get(invoiceId);
-    if (invoice) {
-      invoice.reminderSet = true;
-      invoice.reminderTime = displayTime;
-      invoiceData.set(invoiceId, invoice);
-    }
-    
-    // Timer setzen
-    scheduleReminder(ctx, invoiceId, reminderDateTime);
-    
-    // Kalender-Nachricht löschen
-    await ctx.deleteMessage();
-    
-    // Bestätigung senden
-    await ctx.reply(
-      `✅ *Erinnerung gespeichert*\n\n` +
-      `📄 *Rechnung:* ${invoice ? invoice.fileName : invoiceId}\n` +
-      `⏰ *Erinnerung:* ${displayTime}`,
-      { parse_mode: 'Markdown' }
-    );
-    
-  } catch (error) {
-    console.log('Erinnerungsfehler:', error);
-    await ctx.reply('❌ Fehler beim Speichern der Erinnerung.');
-  }
-});
-
-// Timer-Funktion
-function scheduleReminder(ctx, invoiceId, reminderDateTime) {
-  const timeUntilReminder = reminderDateTime.getTime() - Date.now();
+  const [hours, minutes] = selectedTime.split(':');
+  const reminderDate = new Date(selectedDate);
+  reminderDate.setHours(parseInt(hours), parseInt(minutes));
+  
+  const timeUntilReminder = reminderDate.getTime() - Date.now();
   
   if (timeUntilReminder > 0) {
-    const reminderId = `${invoiceId}_${Date.now()}`;
-    reminders.set(reminderId, { invoiceId, chatId: ctx.chat.id, reminderDateTime });
-    
     setTimeout(() => {
-      sendReminder(ctx.telegram, ctx.chat.id, invoiceId, reminderDateTime);
-      reminders.delete(reminderId);
+      const invoice = invoiceData.get(invoiceId);
+      const fileName = invoice ? invoice.fileName : `Rechnung ${invoiceId}`;
+      
+      ctx.telegram.sendMessage(ctx.chat.id,
+        `🔔 *ERINNERUNG*\n\n` +
+        `📄 ${fileName}\n\n` +
+        `⚠️ Rechnung noch nicht bezahlt!`,
+        { parse_mode: 'Markdown' }
+      );
     }, timeUntilReminder);
   }
-}
-
-// Erinnerung senden
-function sendReminder(telegram, chatId, invoiceId, reminderDateTime) {
-  const invoice = invoiceData.get(invoiceId);
-  const fileName = invoice ? invoice.fileName : `Rechnung #${invoiceId}`;
   
-  const formattedDate = reminderDateTime.toLocaleDateString('de-DE');
-  const formattedTime = reminderDateTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  const formattedDate = reminderDate.toLocaleDateString('de-DE');
+  const formattedTime = reminderDate.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
   
-  const buttons = Markup.inlineKeyboard([
-    [
-      Markup.button.callback('💸 Jetzt bezahlt', `paid_${invoiceId}`),
-      Markup.button.callback('⏰ Neue Erinnerung', `reminder_${invoiceId}`)
-    ],
-    [
-      Markup.button.callback('🕐 In 2 Stunden erinnern', `snooze_${invoiceId}`)
-    ],
-    [
-      Markup.button.callback('🔕 Ignorieren', 'ignore')
-    ]
-  ]);
-  
-  telegram.sendMessage(chatId,
-    `🔔 *ERINNERUNG*\n\n` +
-    `⚠️ Rechnung noch nicht bezahlt!\n\n` +
-    `📄 *Datei:* ${fileName}\n` +
-    `📅 *Erinnerung für:* ${formattedDate} ${formattedTime}\n\n` +
-    `Was möchtest du tun?`,
-    { ...buttons, parse_mode: 'Markdown' }
-  );
-}
-
-// Snooze-Funktion
-bot.action(/^snooze_(.+)/, async (ctx) => {
-  const invoiceId = ctx.match[1];
-  await ctx.answerCbQuery('In 2 Stunden wird erinnert! ⏰');
-  
-  const snoozeTime = new Date();
-  snoozeTime.setHours(snoozeTime.getHours() + 2);
-  
-  setTimeout(() => {
-    sendReminder(ctx.telegram, ctx.chat.id, invoiceId, snoozeTime);
-  }, 2 * 60 * 60 * 1000);
-  
-  await ctx.editMessageText(
-    `⏰ *Erinnerung verschoben*\n\n` +
-    `🕐 *Nächste Erinnerung:* ${snoozeTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`,
+  ctx.editMessageText(
+    `✅ *Erinnerung gesetzt*\n\n` +
+    `📅 ${formattedDate} um ${formattedTime}`,
     { parse_mode: 'Markdown' }
   );
 });
 
-// Ignore Handler
-bot.action('ignore', async (ctx) => {
-  await ctx.answerCbQuery('Erinnerung ignoriert');
-  await ctx.editMessageText('🔕 Erinnerung wurde ignoriert.');
-});
-
-// Bot Start
-bot.start((ctx) => {
-  ctx.reply(
-    `🤖 *Rechnungs-Bot gestartet!*\n\n` +
-    `📋 Verfügbare Kommandos:\n` +
-    `/rechnung - Test-Rechnung erstellen\n\n` +
-    `💡 Der Bot ist bereit für deine Rechnungen!`,
-    { parse_mode: 'Markdown' }
-  );
-});
-
+// Bot starten
 bot.launch();
+console.log('Bot started successfully!');
 
-console.log('🤖 Telegram Rechnungs-Bot mit optimierter UI gestartet!');
-console.log(`🌐 HTTP Server läuft auf Port ${PORT}`);
-
-// Graceful stop
+// Graceful shutdown
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
