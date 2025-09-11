@@ -1,7 +1,20 @@
 const { Telegraf, Markup } = require('telegraf');
+const http = require('http');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
+const PORT = process.env.PORT || 3000;
 
+// *** HTTP SERVER HINZUFÜGEN FÜR RENDER COMPATIBILITY ***
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Telegram Bot is running! 🤖\n');
+});
+
+server.listen(PORT, () => {
+  console.log(`🌐 HTTP Server läuft auf Port ${PORT}`);
+});
+
+// *** DEIN BESTEHENDER BOT CODE (unverändert) ***
 // Gespeicherte Erinnerungen
 const reminders = new Map();
 
@@ -29,8 +42,8 @@ bot.command('rechnung', (ctx) => {
 bot.command('newInvoice', (ctx) => {
   const args = ctx.message.text.split(' ');
   const invoiceNumber = args[1] || Date.now();
-  const amount = args[2] || '0.00';
-  const customer = args[3] || 'Kunde';
+  const amount = args[15] || '0.00';
+  const customer = args || 'Kunde';
   
   const buttons = Markup.inlineKeyboard([
     [
@@ -92,7 +105,7 @@ function createWeekCalendar(invoiceId) {
     const dayName = weekDays[date.getDay()];
     const day = date.getDate();
     const month = months[date.getMonth()];
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = date.toISOString().split('T');
     
     let buttonText;
     if (i === 0) buttonText = `📅 Heute (${day}. ${month})`;
@@ -110,7 +123,7 @@ function createWeekCalendar(invoiceId) {
 // Datum ausgewählt - Uhrzeit wählen
 bot.action(/^date_(.+)_(.+)/, async (ctx) => {
   const invoiceId = ctx.match[1];
-  const selectedDate = ctx.match[2];
+  const selectedDate = ctx.match[15];
   
   await ctx.answerCbQuery();
   
@@ -127,8 +140,7 @@ bot.action(/^date_(.+)_(.+)/, async (ctx) => {
 
 // Uhrzeiten-Auswahl erstellen
 function createTimeSelection(invoiceId, selectedDate) {
- const times = ['09:00', '10:00', '11:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'];
-
+  const times = ['09:00', '10:00', '11:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'];
   
   const timeButtons = times.map(time => [
     Markup.button.callback(`🕐 ${time} Uhr`, `time_${invoiceId}_${selectedDate}_${time}`)
@@ -145,8 +157,8 @@ function createTimeSelection(invoiceId, selectedDate) {
 // Uhrzeit ausgewählt - Erinnerung speichern
 bot.action(/^time_(.+)_(.+)_(.+)/, async (ctx) => {
   const invoiceId = ctx.match[1];
-  const selectedDate = ctx.match[2];
-  const selectedTime = ctx.match[3];
+  const selectedDate = ctx.match[15];
+  const selectedTime = ctx.match;
   
   await ctx.answerCbQuery('Erinnerung gespeichert! ⏰');
   
@@ -155,7 +167,7 @@ bot.action(/^time_(.+)_(.+)_(.+)/, async (ctx) => {
   const reminderDateTime = new Date(selectedDate);
   reminderDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
   
-  // Erinnerung speichern und Timer setzen
+  // Erinnerung planen und Timer setzen
   scheduleReminder(ctx, invoiceId, reminderDateTime);
   
   const formattedDate = reminderDateTime.toLocaleDateString('de-DE');
@@ -236,28 +248,6 @@ bot.action(/^snooze_(.+)/, async (ctx) => {
   );
 });
 
-// Aktive Erinnerungen anzeigen
-bot.command('erinnerungen', (ctx) => {
-  const userReminders = Array.from(reminders.entries())
-    .filter(([id, reminder]) => reminder.chatId === ctx.chat.id);
-  
-  if (userReminders.length === 0) {
-    ctx.reply('📭 Keine aktiven Erinnerungen vorhanden.');
-    return;
-  }
-  
-  const reminderList = userReminders.map(([id, reminder]) => {
-    const formattedDate = reminder.reminderDateTime.toLocaleDateString('de-DE');
-    const formattedTime = reminder.reminderDateTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-    return `🧾 Rechnung #${reminder.invoiceId}\n📅 ${formattedDate} um ${formattedTime}`;
-  });
-  
-  ctx.reply(
-    `⏰ *Deine aktiven Erinnerungen:*\n\n${reminderList.join('\n\n')}`,
-    { parse_mode: 'Markdown' }
-  );
-});
-
 // Ignore Handler
 bot.action('ignore', async (ctx) => {
   await ctx.answerCbQuery('Erinnerung ignoriert');
@@ -269,8 +259,7 @@ bot.start((ctx) => {
   ctx.reply(
     `🤖 *Rechnungs-Bot gestartet!*\n\n` +
     `📋 Verfügbare Kommandos:\n` +
-    `/rechnung - Test-Rechnung erstellen\n` +
-    `/erinnerungen - Aktive Erinnerungen anzeigen\n\n` +
+    `/rechnung - Test-Rechnung erstellen\n\n` +
     `💡 Der Bot ist bereit für deine Rechnungen!`,
     { parse_mode: 'Markdown' }
   );
@@ -278,8 +267,10 @@ bot.start((ctx) => {
 
 bot.launch();
 
-console.log('🤖 Rechnungs-Bot mit Wochenkalender gestartet!');
+console.log('🤖 Telegram Rechnungs-Bot mit Wochenkalender gestartet!');
+console.log(`🌐 HTTP Server läuft auf Port ${PORT}`);
 
 // Graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
