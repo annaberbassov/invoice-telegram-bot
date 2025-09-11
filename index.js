@@ -14,16 +14,10 @@ server.listen(PORT, () => {
   console.log(`HTTP Server läuft auf Port ${PORT}`);
 });
 
-// Bot Token prüfen
+// Bot Token
 const BOT_TOKEN = process.env.BOT_TOKEN;
 console.log('Bot Token vorhanden:', BOT_TOKEN ? 'JA' : 'NEIN');
 
-if (!BOT_TOKEN) {
-  console.error('ERROR: BOT_TOKEN nicht gefunden!');
-  process.exit(1);
-}
-
-// Bot erstellen
 const bot = new Telegraf(BOT_TOKEN);
 console.log('Bot erfolgreich erstellt');
 
@@ -31,7 +25,7 @@ console.log('Bot erfolgreich erstellt');
 const invoiceData = new Map();
 const reminders = new Map();
 
-// Test-Rechnung
+// Test-Rechnung - MARKDOWN REPARIERT
 bot.command('rechnung', (ctx) => {
   console.log('Rechnung-Kommando empfangen');
   
@@ -41,7 +35,7 @@ bot.command('rechnung', (ctx) => {
     type: 'rechnung', 
     project: 'Test Projekt',
     date: '2025_09_11',
-    driveUrl: 'https://drive.google.com/file/d/test/view'
+    driveUrl: 'https://drive.google.com/file/d/test123/view'
   };
   
   invoiceData.set(invoice.id, invoice);
@@ -56,19 +50,23 @@ bot.command('rechnung', (ctx) => {
     ]
   ]);
   
-  ctx.reply(
+  // SICHERE TEXT-FORMATIERUNG ohne problematische Zeichen
+  const message = 
     `📧 *Neue Rechnung eingegangen*\n\n` +
     `📄 *Datei:* ${invoice.fileName}\n` +
     `💰 *Typ:* ${invoice.type}\n` +
     `🏢 *Projekt:* ${invoice.project}\n` +
     `📅 *Datum:* ${invoice.date}\n` +
-    `🔗 [Drive-Link](${invoice.driveUrl})\n\n` +
-    `Bitte Aktion wählen:`,
-    { ...buttons, parse_mode: 'Markdown', disable_web_page_preview: true }
-  );
+    `🔗 *Drive-Link:* ${invoice.driveUrl}\n\n` +
+    `Bitte Aktion wählen:`;
+  
+  ctx.reply(message, {
+    ...buttons,
+    parse_mode: 'Markdown'
+  });
 });
 
-// Apps Script Integration  
+// Apps Script Integration - REPARIERT
 bot.command('newInvoice', (ctx) => {
   console.log('newInvoice-Kommando empfangen');
   
@@ -101,16 +99,19 @@ bot.command('newInvoice', (ctx) => {
                      invoice.fileName.substring(0, 37) + '...' : 
                      invoice.fileName;
     
-    ctx.reply(
+    const message = 
       `📧 *Neue Rechnung eingegangen*\n\n` +
       `📄 *Datei:* ${shortName}\n` +
       `💰 *Typ:* ${invoice.type}\n` +
       `🏢 *Projekt:* ${invoice.project}\n` +
       `📅 *Datum:* ${invoice.date}\n` +
-      `🔗 [Drive-Link](${invoice.driveUrl})\n\n` +
-      `Bitte Aktion wählen:`,
-      { ...buttons, parse_mode: 'Markdown', disable_web_page_preview: true }
-    );
+      `🔗 *Drive-Link:* ${invoice.driveUrl}\n\n` +
+      `Bitte Aktion wählen:`;
+    
+    ctx.reply(message, {
+      ...buttons,
+      parse_mode: 'Markdown'
+    });
   }
 });
 
@@ -120,15 +121,16 @@ bot.action(/^paid_(.+)/, async (ctx) => {
   await ctx.answerCbQuery('Rechnung als bezahlt markiert! ✅');
   
   const invoice = invoiceData.get(invoiceId);
+  const fileName = invoice ? invoice.fileName : invoiceId;
+  
   await ctx.editMessageText(
     `✅ *Rechnung bezahlt*\n\n` +
-    `📄 *Datei:* ${invoice ? invoice.fileName : invoiceId}\n` +
+    `📄 *Datei:* ${fileName}\n` +
     `📅 *Bezahlt am:* ${new Date().toLocaleDateString('de-DE')}\n` +
     `⏰ *Zeit:* ${new Date().toLocaleTimeString('de-DE')}`,
     { parse_mode: 'Markdown' }
   );
   
-  // Rechnung aus Speicher entfernen
   if (invoice) {
     invoiceData.delete(invoiceId);
   }
@@ -140,16 +142,18 @@ bot.action(/^problem_(.+)/, async (ctx) => {
   await ctx.answerCbQuery('Problem markiert! ❌');
   
   const invoice = invoiceData.get(invoiceId);
+  const fileName = invoice ? invoice.fileName : invoiceId;
+  
   await ctx.editMessageText(
     `❌ *Problem mit Rechnung*\n\n` +
-    `📄 *Datei:* ${invoice ? invoice.fileName : invoiceId}\n` +
-    `⚠️ *Status:* Problemfall - manuelle Bearbeitung erforderlich\n` +
+    `📄 *Datei:* ${fileName}\n` +
+    `⚠️ *Status:* Problemfall\n` +
     `📅 *Gemeldet am:* ${new Date().toLocaleDateString('de-DE')}`,
     { parse_mode: 'Markdown' }
   );
 });
 
-// Erinnerung Button - Kalender anzeigen
+// Erinnerung Button - Kalender
 bot.action(/^reminder_(.+)/, async (ctx) => {
   const invoiceId = ctx.match[1];
   await ctx.answerCbQuery();
@@ -281,7 +285,7 @@ bot.action('ignore', async (ctx) => {
   await ctx.editMessageText('🔕 Erinnerung wurde ignoriert.');
 });
 
-// Test-Kommandos beibehalten
+// Test-Kommandos
 bot.start((ctx) => {
   console.log('Start-Kommando empfangen');
   ctx.reply('🤖 Rechnungs-Bot läuft erfolgreich!');
