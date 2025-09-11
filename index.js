@@ -14,7 +14,7 @@ server.listen(PORT, () => {
   console.log(`🌐 HTTP Server läuft auf Port ${PORT}`);
 });
 
-// *** DEIN BESTEHENDER BOT CODE (unverändert) ***
+// *** DEIN BESTEHENDER BOT CODE MIT FIXES ***
 // Gespeicherte Erinnerungen
 const reminders = new Map();
 
@@ -42,8 +42,8 @@ bot.command('rechnung', (ctx) => {
 bot.command('newInvoice', (ctx) => {
   const args = ctx.message.text.split(' ');
   const invoiceNumber = args[1] || Date.now();
-  const amount = args[15] || '0.00';
-  const customer = args || 'Kunde';
+  const amount = args[2] || '0.00';
+  const customer = args[3] || 'Kunde';
   
   const buttons = Markup.inlineKeyboard([
     [
@@ -90,7 +90,7 @@ bot.action(/^reminder_(.+)/, async (ctx) => {
   );
 });
 
-// Wochenkalender erstellen (nächste 7 Tage)
+// Wochenkalender erstellen (nächste 7 Tage) - VERBESSERT
 function createWeekCalendar(invoiceId) {
   const today = new Date();
   const weekDays = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
@@ -105,7 +105,9 @@ function createWeekCalendar(invoiceId) {
     const dayName = weekDays[date.getDay()];
     const day = date.getDate();
     const month = months[date.getMonth()];
-    const dateStr = date.toISOString().split('T');
+    
+    // FIX: ISO Format für eindeutige Datumswerte
+    const dateStr = date.toISOString().split('T')[0];
     
     let buttonText;
     if (i === 0) buttonText = `📅 Heute (${day}. ${month})`;
@@ -120,22 +122,50 @@ function createWeekCalendar(invoiceId) {
   return Markup.inlineKeyboard(buttons);
 }
 
-// Datum ausgewählt - Uhrzeit wählen
+// Datum ausgewählt - Uhrzeit wählen - KOMPLETT ÜBERARBEITET
 bot.action(/^date_(.+)_(.+)/, async (ctx) => {
   const invoiceId = ctx.match[1];
-  const selectedDate = ctx.match[15];
+  let selectedDate = ctx.match[2];
   
   await ctx.answerCbQuery();
   
-  const timeButtons = createTimeSelection(invoiceId, selectedDate);
-  const formattedDate = new Date(selectedDate).toLocaleDateString('de-DE');
+  // Fix für "heute" und "morgen" (falls noch verwendet)
+  const today = new Date();
+  if (selectedDate === 'heute') {
+    selectedDate = today.toISOString().split('T')[0];
+  } else if (selectedDate === 'morgen') {
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    selectedDate = tomorrow.toISOString().split('T')[0];
+  }
   
-  await ctx.editMessageText(
-    `⏰ *Erinnerung für Rechnung #${invoiceId}*\n\n` +
-    `📅 Datum: *${formattedDate}*\n\n` +
-    `🕐 Wähle die Uhrzeit:`,
-    { ...timeButtons, parse_mode: 'Markdown' }
-  );
+  const timeButtons = createTimeSelection(invoiceId, selectedDate);
+  
+  // Sichere Datumsformatierung
+  try {
+    const dateObj = new Date(selectedDate + 'T12:00:00.000Z');
+    const formattedDate = dateObj.toLocaleDateString('de-DE', {
+      day: '2-digit',
+      month: '2-digit', 
+      year: 'numeric',
+      timeZone: 'Europe/Berlin'
+    });
+    
+    await ctx.editMessageText(
+      `⏰ *Erinnerung für Rechnung #${invoiceId}*\n\n` +
+      `📅 Datum: *${formattedDate}*\n\n` +
+      `🕐 Wähle die Uhrzeit:`,
+      { ...timeButtons, parse_mode: 'Markdown' }
+    );
+  } catch (error) {
+    console.log('Datumsfehler:', error);
+    await ctx.editMessageText(
+      `⏰ *Erinnerung für Rechnung #${invoiceId}*\n\n` +
+      `📅 Datum: *${selectedDate}*\n\n` +
+      `🕐 Wähle die Uhrzeit:`,
+      { ...timeButtons, parse_mode: 'Markdown' }
+    );
+  }
 });
 
 // Uhrzeiten-Auswahl erstellen
@@ -154,38 +184,49 @@ function createTimeSelection(invoiceId, selectedDate) {
   return Markup.inlineKeyboard(timeButtons);
 }
 
-// Uhrzeit ausgewählt - Erinnerung speichern
+// Uhrzeit ausgewählt - Erinnerung speichern - VERBESSERT
 bot.action(/^time_(.+)_(.+)_(.+)/, async (ctx) => {
   const invoiceId = ctx.match[1];
-  const selectedDate = ctx.match[15];
-  const selectedTime = ctx.match;
+  const selectedDate = ctx.match[2];
+  const selectedTime = ctx.match[3];
   
   await ctx.answerCbQuery('Erinnerung gespeichert! ⏰');
   
-  // Erinnerungsdatum berechnen
-  const [hours, minutes] = selectedTime.split(':');
-  const reminderDateTime = new Date(selectedDate);
-  reminderDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-  
-  // Erinnerung planen und Timer setzen
-  scheduleReminder(ctx, invoiceId, reminderDateTime);
-  
-  const formattedDate = reminderDateTime.toLocaleDateString('de-DE');
-  const formattedTime = reminderDateTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-  
-  await ctx.editMessageText(
-    `✅ *Erinnerung gespeichert*\n\n` +
-    `🧾 Rechnung: *#${invoiceId}*\n` +
-    `📅 Datum: *${formattedDate}*\n` +
-    `⏰ Zeit: *${formattedTime}*\n\n` +
-    `Du wirst zur gewählten Zeit erinnert! 🔔`,
-    { parse_mode: 'Markdown' }
-  );
+  // Sichere Erinnerungsdatum-Berechnung
+  try {
+    const [hours, minutes] = selectedTime.split(':');
+    const reminderDateTime = new Date(selectedDate + 'T00:00:00.000Z');
+    reminderDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+    
+    // Erinnerung planen und Timer setzen
+    scheduleReminder(ctx, invoiceId, reminderDateTime);
+    
+    const formattedDate = reminderDateTime.toLocaleDateString('de-DE');
+    const formattedTime = reminderDateTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    
+    await ctx.editMessageText(
+      `✅ *Erinnerung gespeichert*\n\n` +
+      `🧾 Rechnung: *#${invoiceId}*\n` +
+      `📅 Datum: *${formattedDate}*\n` +
+      `⏰ Zeit: *${formattedTime}*\n\n` +
+      `Du wirst zur gewählten Zeit erinnert! 🔔`,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (error) {
+    console.log('Erinnerungsfehler:', error);
+    await ctx.editMessageText(
+      `❌ *Fehler beim Speichern der Erinnerung*\n\n` +
+      `Bitte versuche es erneut.`,
+      { parse_mode: 'Markdown' }
+    );
+  }
 });
 
 // Erinnerung planen und Timer setzen
 function scheduleReminder(ctx, invoiceId, reminderDateTime) {
   const timeUntilReminder = reminderDateTime.getTime() - Date.now();
+  
+  console.log(`Erinnerung für ${invoiceId} in ${Math.round(timeUntilReminder / 1000 / 60)} Minuten`);
   
   if (timeUntilReminder > 0) {
     const reminderId = `${invoiceId}_${Date.now()}`;
@@ -195,6 +236,8 @@ function scheduleReminder(ctx, invoiceId, reminderDateTime) {
       sendReminder(ctx.telegram, ctx.chat.id, invoiceId, reminderDateTime);
       reminders.delete(reminderId);
     }, timeUntilReminder);
+  } else {
+    console.log('Erinnerungszeit liegt in der Vergangenheit');
   }
 }
 
@@ -248,6 +291,28 @@ bot.action(/^snooze_(.+)/, async (ctx) => {
   );
 });
 
+// Aktive Erinnerungen anzeigen
+bot.command('erinnerungen', (ctx) => {
+  const userReminders = Array.from(reminders.entries())
+    .filter(([id, reminder]) => reminder.chatId === ctx.chat.id);
+  
+  if (userReminders.length === 0) {
+    ctx.reply('📭 Keine aktiven Erinnerungen vorhanden.');
+    return;
+  }
+  
+  const reminderList = userReminders.map(([id, reminder]) => {
+    const formattedDate = reminder.reminderDateTime.toLocaleDateString('de-DE');
+    const formattedTime = reminder.reminderDateTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    return `🧾 Rechnung #${reminder.invoiceId}\n📅 ${formattedDate} um ${formattedTime}`;
+  });
+  
+  ctx.reply(
+    `⏰ *Deine aktiven Erinnerungen:*\n\n${reminderList.join('\n\n')}`,
+    { parse_mode: 'Markdown' }
+  );
+});
+
 // Ignore Handler
 bot.action('ignore', async (ctx) => {
   await ctx.answerCbQuery('Erinnerung ignoriert');
@@ -259,7 +324,8 @@ bot.start((ctx) => {
   ctx.reply(
     `🤖 *Rechnungs-Bot gestartet!*\n\n` +
     `📋 Verfügbare Kommandos:\n` +
-    `/rechnung - Test-Rechnung erstellen\n\n` +
+    `/rechnung - Test-Rechnung erstellen\n` +
+    `/erinnerungen - Aktive Erinnerungen anzeigen\n\n` +
     `💡 Der Bot ist bereit für deine Rechnungen!`,
     { parse_mode: 'Markdown' }
   );
@@ -273,4 +339,3 @@ console.log(`🌐 HTTP Server läuft auf Port ${PORT}`);
 // Graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
