@@ -57,7 +57,7 @@ function getMemoryUsage() {
 function notifyAppsScript(action, fileId) {
   console.log(`📤 Apps Script: ${action} für ${fileId}`);
   
-  const APPS_SCRIPT_WEBHOOK = 'https://script.google.com/macros/s/DEINE_SCRIPT_ID/exec';
+  const APPS_SCRIPT_WEBHOOK = 'https://script.google.com/macros/s/AKfycbyDONFHC6_mHc5WGA4pzcwjR6c3xLilmwj9z-TLNSeTy99Rg0xNapmy8AW1n7GEOCt0_w/exec';
   
   const payload = JSON.stringify({
     action: action,
