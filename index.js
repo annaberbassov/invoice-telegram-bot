@@ -1,7 +1,9 @@
 const { Telegraf, Markup } = require('telegraf');
 const http = require('http');
+const https = require('https');  // ← DIESE ZEILE HINZUFÜGEN
 
 console.log('🚀 A&A Backoffice Bot startet...');
+
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const PORT = process.env.PORT || 3000;
