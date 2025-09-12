@@ -449,8 +449,29 @@ function clearRemindersForInvoice(invoiceId) {
 
 function notifyAppsScript(action, fileId) {
   console.log(`📤 Apps Script: ${action} für ${fileId}`);
-  // Hier später Webhook zu Apps Script
+  
+  const APPS_SCRIPT_WEBHOOK = 'https://script.google.com/macros/s/AKfycbyDONFHC6_mHc5WGA4pzcwjR6c3xLilmwj9z-TLNSeTy99Rg0xNapmy8AW1n7GEOCt0_w/exec';
+  
+  const payload = {
+    action: action,
+    fileId: fileId
+  };
+
+  try {
+    // ECHTER Call zu Apps Script (auskommentieren aktiviert den Call)
+    fetch(APPS_SCRIPT_WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    console.log(`✅ Apps Script Call gesendet: ${JSON.stringify(payload)}`);
+  } catch (e) {
+    console.error('❌ Apps Script Error:', e);
+  }
 }
+
+
 
 // =============== STANDARD-KOMMANDOS ===============
 bot.start((ctx) => {
