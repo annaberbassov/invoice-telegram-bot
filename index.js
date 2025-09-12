@@ -511,7 +511,6 @@ bot.catch((err, ctx) => {
 if (process.env.NODE_ENV === 'production') {
   const webhookUrl = `${process.env.RENDER_EXTERNAL_URL}/webhook`;
   bot.telegram.setWebhook(webhookUrl);
-  bot.startWebhook('/webhook', null, PORT);
   console.log(`🔗 Webhook gesetzt: ${webhookUrl}`);
 } else {
   bot.launch();
