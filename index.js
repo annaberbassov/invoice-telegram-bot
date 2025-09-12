@@ -507,9 +507,35 @@ bot.catch((err, ctx) => {
   console.error('Bot Fehler:', err);
 });
 
-// Webhook für Render
+// =============== WEBHOOK HANDLER FÜR RENDER ===============
+server.on('request', (req, res) => {
+  if (req.url === '/webhook' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk.toString();
+    });
+    
+    req.on('end', () => {
+      try {
+        const update = JSON.parse(body);
+        bot.handleUpdate(update);
+        console.log('📨 Update verarbeitet:', update.message?.text || 'Button/Action');
+      } catch (e) {
+        console.error('❌ Webhook Parse Fehler:', e);
+      }
+      
+      res.writeHead(200, {'Content-Type': 'text/plain'});
+      res.end('OK');
+    });
+  } else {
+    res.writeHead(200, {'Content-Type': 'text/plain'});
+    res.end('A&A Backoffice Bot Running');
+  }
+});
+
+// Webhook für Production setzen
 if (process.env.NODE_ENV === 'production') {
-  const webhookUrl = `${process.env.RENDER_EXTERNAL_URL}/webhook`;
+  const webhookUrl = 'https://invoice-telegram-bot.onrender.com/webhook';
   bot.telegram.setWebhook(webhookUrl);
   console.log(`🔗 Webhook gesetzt: ${webhookUrl}`);
 } else {
@@ -522,6 +548,7 @@ console.log('✅ A&A BACKOFFICE BOT LÄUFT PERFEKT!');
 // Graceful shutdown
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
 
 
 
