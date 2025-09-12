@@ -6,10 +6,30 @@ console.log('🚀 A&A Backoffice Bot startet...');
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const PORT = process.env.PORT || 3000;
 
-// HTTP Server für Render
+// HTTP Server mit Webhook Handler
 const server = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('A&A Backoffice Bot Running\n');
+  if (req.url === '/webhook' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk.toString();
+    });
+    
+    req.on('end', () => {
+      try {
+        const update = JSON.parse(body);
+        bot.handleUpdate(update);
+        console.log('📨 Update:', update.message?.text || 'Button');
+      } catch (e) {
+        console.error('❌ Parse Error:', e);
+      }
+      
+      res.writeHead(200, {'Content-Type': 'text/plain'});
+      res.end('OK');
+    });
+  } else {
+    res.writeHead(200, {'Content-Type': 'text/plain'});
+    res.end('A&A Backoffice Bot Running');
+  }
 });
 
 server.listen(PORT, () => {
@@ -507,31 +527,6 @@ bot.catch((err, ctx) => {
   console.error('Bot Fehler:', err);
 });
 
-// =============== WEBHOOK HANDLER FÜR RENDER ===============
-server.on('request', (req, res) => {
-  if (req.url === '/webhook' && req.method === 'POST') {
-    let body = '';
-    req.on('data', chunk => {
-      body += chunk.toString();
-    });
-    
-    req.on('end', () => {
-      try {
-        const update = JSON.parse(body);
-        bot.handleUpdate(update);
-        console.log('📨 Update verarbeitet:', update.message?.text || 'Button/Action');
-      } catch (e) {
-        console.error('❌ Webhook Parse Fehler:', e);
-      }
-      
-      res.writeHead(200, {'Content-Type': 'text/plain'});
-      res.end('OK');
-    });
-  } else {
-    res.writeHead(200, {'Content-Type': 'text/plain'});
-    res.end('A&A Backoffice Bot Running');
-  }
-});
 
 // Webhook für Production setzen
 if (process.env.NODE_ENV === 'production') {
