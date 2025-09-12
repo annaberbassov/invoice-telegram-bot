@@ -143,16 +143,16 @@ function sendInvoiceMessage(ctx, invoice) {
                    invoice.fileName;
 
   // Kurze Callback-Data für 64-Byte-Limit
-  const buttons = Markup.inlineKeyboard([
-    [
-      Markup.button.callback('✅ BEZAHLT', `p_${invoice.id}`),
-      Markup.button.callback('❌ PROBLEM', `x_${invoice.id}`)
-    ],
-    [
-      Markup.button.callback('🔄 RÜCKGÄNGIG', `u_${invoice.id}`),
-      Markup.button.callback('⏰ ERINNERUNG', `r_${invoice.id}`)
-    ]
-  ]);
+const buttons = Markup.inlineKeyboard([
+  [
+    Markup.button.callback('✅ BEZAHLT', `p_${invoice.id}`),
+    Markup.button.callback('⏰ ERINNERUNG', `r_${invoice.id}`)
+  ],
+  [
+    Markup.button.callback('🔄 RÜCKGÄNGIG', `u_${invoice.id}`)
+  ]
+]);
+
 
   const message = 
     `📋 <b>Neue Rechnung</b>\n\n` +
@@ -241,30 +241,6 @@ bot.action(/^u_(.+)/, async (ctx) => {
   sendInvoiceMessage(ctx, invoice);
 });
 
-// =============== PROBLEM BUTTON ===============
-bot.action(/^x_(.+)/, async (ctx) => {
-  const id = parseInt(ctx.match[1]);
-  const invoice = invoices.get(id);
-  
-  await ctx.answerCbQuery('❌ Problem markiert!');
-  
-  if (invoice) {
-    invoice.status = 'problem';
-  }
-
-  const shortName = invoice ? 
-    (invoice.fileName.length > 35 ? invoice.fileName.substring(0, 32) + '...' : invoice.fileName) :
-    `ID: ${id}`;
-
-  await ctx.editMessageText(
-    `❌ <b>PROBLEM</b>\n\n` +
-    `📄 <b>Datei:</b> ${shortName}\n` +
-    `⚠️ <b>Status:</b> Problemfall - manuelle Bearbeitung\n` +
-    `📅 <b>Gemeldet:</b> ${new Date().toLocaleDateString('de-DE')}\n\n` +
-    `Bitte manuell prüfen!`,
-    { parse_mode: 'HTML' }
-  );
-});
 
 // =============== ERINNERUNG SYSTEM ===============
 
@@ -380,15 +356,15 @@ function sendReminderNotification(telegram, chatId, invoice) {
                    invoice.fileName;
 
   const buttons = Markup.inlineKeyboard([
-    [
-      Markup.button.callback('✅ BEZAHLT', `p_${invoice.id}`),
-      Markup.button.callback('❌ PROBLEM', `x_${invoice.id}`)
-    ],
-    [
-      Markup.button.callback('🕐 In 2h erinnern', `s_${invoice.id}_2`),
-      Markup.button.callback('⏰ Neue Erinnerung', `r_${invoice.id}`)
-    ]
-  ]);
+  [
+    Markup.button.callback('✅ BEZAHLT', `p_${invoice.id}`)
+  ],
+  [
+    Markup.button.callback('🕐 In 2h erinnern', `s_${invoice.id}_2`),
+    Markup.button.callback('⏰ Neue Erinnerung', `r_${invoice.id}`)
+  ]
+]);
+
 
   telegram.sendMessage(chatId,
     `🔔 <b>ERINNERUNG</b>\n\n` +
