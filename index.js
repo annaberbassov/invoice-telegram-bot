@@ -447,7 +447,11 @@ bot.action(/^dt_(.+)_(.+)_(.+)/, async (ctx) => {
     }
 
     const reminderDate = getNextWeekday(targetDay, targetHour);
-    const timeUntilReminder = reminderDate.getTime() - Date.now();
+    // ✅ RICHTIG (beide CEST):
+const now = new Date();
+const cestNow = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Berlin' }));
+const timeUntilReminder = reminderDate.getTime() - cestNow.getTime();
+
     
     // Memory-Schutz: Max 7 Tage Timer
     if (timeUntilReminder > 0 && timeUntilReminder < 7 * 24 * 60 * 60 * 1000) {
