@@ -92,9 +92,17 @@ function notifyAppsScript(action, fileId) {
 
 // =============== HELPER FUNCTIONS ===============
 function getNextWeekday(weekday, hour) {
-  const today = new Date();
-  const currentDay = today.getDay();
-  const currentHour = today.getHours();
+  // Explizit CEST verwenden
+  const options = { timeZone: 'Europe/Berlin' };
+  const now = new Date();
+  
+  // Aktuelle Zeit in CEST
+  const cestNow = new Date(now.toLocaleString('en-US', options));
+  
+  const currentDay = cestNow.getDay();
+  const currentHour = cestNow.getHours();
+
+  console.log(`🕐 Debug: Jetzt ${currentDay} (${cestNow.toLocaleString('de-DE')}), Ziel: ${weekday} um ${hour}:00`);
 
   let daysUntilTarget = weekday - currentDay;
   
@@ -102,12 +110,17 @@ function getNextWeekday(weekday, hour) {
     daysUntilTarget += 7;
   }
 
-  const targetDate = new Date(today);
-  targetDate.setDate(today.getDate() + daysUntilTarget);
+  // Zielzeit in CEST berechnen  
+  const targetDate = new Date(cestNow);
+  targetDate.setDate(cestNow.getDate() + daysUntilTarget);
   targetDate.setHours(hour, 0, 0, 0);
+  
+  const minutesUntil = Math.round((targetDate.getTime() - cestNow.getTime()) / 1000 / 60);
+  console.log(`⏰ Erinnerung in ${minutesUntil} Min (${Math.round(minutesUntil/60)} Stunden)`);
   
   return targetDate;
 }
+
 
 function clearRemindersForInvoice(invoiceId) {
   const reminderKey = `${invoiceId}_reminder`;
