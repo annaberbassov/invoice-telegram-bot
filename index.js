@@ -95,13 +95,13 @@ function getNextWeekday(weekday, hour) {
   const today = new Date();
   const currentDay = today.getDay();
   const currentHour = today.getHours();
-  
+
   let daysUntilTarget = weekday - currentDay;
   
   if (daysUntilTarget < 0 || (daysUntilTarget === 0 && currentHour >= hour)) {
     daysUntilTarget += 7;
   }
-  
+
   const targetDate = new Date(today);
   targetDate.setDate(today.getDate() + daysUntilTarget);
   targetDate.setHours(hour, 0, 0, 0);
@@ -143,7 +143,11 @@ bot.hears(/^\/invoice_data:(.+)/, async (ctx) => {
     
   } catch (error) {
     console.error('Invoice Data Error:', error);
-    await ctx.reply('❌ Fehler beim Verarbeiten der Rechnungsdaten');
+    try {
+      await ctx.reply('❌ Fehler beim Verarbeiten der Rechnungsdaten');
+    } catch (e) {
+      console.log('⚠️ Reply Error:', e.message);
+    }
   }
 });
 
@@ -171,188 +175,264 @@ async function sendInvoiceMessage(ctx, invoice) {
     `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
     `<b>Status:</b> Ausstehend ⏳`;
 
-  await ctx.reply(message, { 
-    parse_mode: 'HTML', 
-    ...buttons,
-    disable_web_page_preview: true 
-  });
+  try {
+    await ctx.reply(message, { 
+      parse_mode: 'HTML', 
+      ...buttons,
+      disable_web_page_preview: true 
+    });
+  } catch (error) {
+    console.log('⚠️ Send Message Error:', error.message);
+  }
 }
 
-// =============== BUTTON HANDLERS ===============
+// =============== CRASH-SAFE BUTTON HANDLERS ===============
 
 // BEZAHLT Button
 bot.action(/^p_(.+)/, async (ctx) => {
-  const id = parseInt(ctx.match[1]);
-  const invoice = invoices.get(id);
-  
-  if (!invoice) {
-    await ctx.answerCbQuery('❌ Rechnung nicht gefunden');
-    return;
-  }
-
-  await ctx.answerCbQuery('✅ Als bezahlt markiert!');
-  
-  invoice.status = 'paid';
-  invoice.paidDate = new Date().toISOString();
-
-  // Apps Script benachrichtigen
-  if (invoice.fileId) {
-    notifyAppsScript('move_to_paid', invoice.fileId);
-  }
-
-  const shortName = invoice.fileName.length > 35 ? 
-                   invoice.fileName.substring(0, 32) + '...' : 
-                   invoice.fileName;
-
-  // EDITIERE die bestehende Nachricht (keine neue!)
-  await ctx.editMessageText(
-    `✅ <b>BEZAHLT</b>\n\n` +
-    `📄 <b>Datei:</b> ${shortName}\n` +
-    `💰 <b>Typ:</b> ${invoice.type}\n` +
-    `🏢 <b>Projekt:</b> ${invoice.project}\n` +
-    `📅 <b>Bezahlt:</b> ${new Date().toLocaleDateString('de-DE')}\n` +
-    `⏰ <b>Zeit:</b> ${new Date().toLocaleTimeString('de-DE')}\n\n` +
-    `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>`,
-    { 
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('🔄 RÜCKGÄNGIG MACHEN', `u_${invoice.id}`)]
-      ]),
-      disable_web_page_preview: true 
+  try {
+    const id = parseInt(ctx.match[1]);
+    const invoice = invoices.get(id);
+    
+    if (!invoice) {
+      try {
+        await ctx.answerCbQuery('❌ Rechnung nicht gefunden');
+      } catch (e) {
+        console.log('⚠️ Query zu alt (bezahlt):', e.message);
+      }
+      return;
     }
-  );
 
-  // Erinnerungen löschen
-  clearRemindersForInvoice(id);
+    try {
+      await ctx.answerCbQuery('✅ Als bezahlt markiert!');
+    } catch (e) {
+      console.log('⚠️ Query zu alt (bezahlt answer):', e.message);
+    }
+
+    invoice.status = 'paid';
+    invoice.paidDate = new Date().toISOString();
+
+    // Apps Script benachrichtigen
+    if (invoice.fileId) {
+      notifyAppsScript('move_to_paid', invoice.fileId);
+    }
+
+    const shortName = invoice.fileName.length > 35 ? 
+                     invoice.fileName.substring(0, 32) + '...' : 
+                     invoice.fileName;
+
+    // EDITIERE die bestehende Nachricht (keine neue!)
+    try {
+      await ctx.editMessageText(
+        `✅ <b>BEZAHLT</b>\n\n` +
+        `📄 <b>Datei:</b> ${shortName}\n` +
+        `💰 <b>Typ:</b> ${invoice.type}\n` +
+        `🏢 <b>Projekt:</b> ${invoice.project}\n` +
+        `📅 <b>Bezahlt:</b> ${new Date().toLocaleDateString('de-DE')}\n` +
+        `⏰ <b>Zeit:</b> ${new Date().toLocaleTimeString('de-DE')}\n\n` +
+        `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>`,
+        { 
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('🔄 RÜCKGÄNGIG MACHEN', `u_${invoice.id}`)]
+          ]),
+          disable_web_page_preview: true 
+        }
+      );
+    } catch (e) {
+      console.log('⚠️ Edit Message Error (bezahlt):', e.message);
+    }
+
+    // Erinnerungen löschen
+    clearRemindersForInvoice(id);
+
+  } catch (error) {
+    console.log('⚠️ Button Error (bezahlt):', error.message);
+  }
 });
 
 // RÜCKGÄNGIG Button
 bot.action(/^u_(.+)/, async (ctx) => {
-  const id = parseInt(ctx.match[1]);
-  const invoice = invoices.get(id);
-  
-  if (!invoice) {
-    await ctx.answerCbQuery('❌ Rechnung nicht gefunden');
-    return;
-  }
-
-  await ctx.answerCbQuery('🔄 Rückgängig gemacht!');
-  
-  invoice.status = 'pending';
-  delete invoice.paidDate;
-
-  // Apps Script - zurück zum Invoice-Ordner
-  if (invoice.fileId) {
-    notifyAppsScript('move_to_invoice', invoice.fileId);
-  }
-
-  // Erinnerungen auch löschen bei Rückgängig
-  clearRemindersForInvoice(id);
-
-  const shortName = invoice.fileName.length > 35 ? 
-                   invoice.fileName.substring(0, 32) + '...' : 
-                   invoice.fileName;
-
-  // ZURÜCK zur Original-Nachricht (editieren, nicht neu erstellen!)
-  await ctx.editMessageText(
-    `📋 <b>Neue Rechnung</b>\n\n` +
-    `📄 <b>Datei:</b> ${shortName}\n` +
-    `💰 <b>Typ:</b> ${invoice.type}\n` +
-    `🏢 <b>Projekt:</b> ${invoice.project}\n` +
-    `📅 <b>Datum:</b> ${invoice.date}\n` +
-    `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
-    `<b>Status:</b> Ausstehend ⏳`,
-    { 
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([
-        [
-          Markup.button.callback('✅ BEZAHLT', `p_${invoice.id}`),
-          Markup.button.callback('⏰ ERINNERUNG', `r_${invoice.id}`)
-        ],
-        [
-          Markup.button.callback('🔄 RÜCKGÄNGIG', `u_${invoice.id}`)
-        ]
-      ]),
-      disable_web_page_preview: true 
+  try {
+    const id = parseInt(ctx.match[1]);
+    const invoice = invoices.get(id);
+    
+    if (!invoice) {
+      try {
+        await ctx.answerCbQuery('❌ Rechnung nicht gefunden');
+      } catch (e) {
+        console.log('⚠️ Query zu alt (rückgängig):', e.message);
+      }
+      return;
     }
-  );
+
+    try {
+      await ctx.answerCbQuery('🔄 Rückgängig gemacht!');
+    } catch (e) {
+      console.log('⚠️ Query zu alt (rückgängig answer):', e.message);
+    }
+
+    invoice.status = 'pending';
+    delete invoice.paidDate;
+
+    // Apps Script - zurück zum Invoice-Ordner
+    if (invoice.fileId) {
+      notifyAppsScript('move_to_invoice', invoice.fileId);
+    }
+
+    // Erinnerungen auch löschen bei Rückgängig
+    clearRemindersForInvoice(id);
+
+    const shortName = invoice.fileName.length > 35 ? 
+                     invoice.fileName.substring(0, 32) + '...' : 
+                     invoice.fileName;
+
+    // ZURÜCK zur Original-Nachricht (editieren, nicht neu erstellen!)
+    try {
+      await ctx.editMessageText(
+        `📋 <b>Neue Rechnung</b>\n\n` +
+        `📄 <b>Datei:</b> ${shortName}\n` +
+        `💰 <b>Typ:</b> ${invoice.type}\n` +
+        `🏢 <b>Projekt:</b> ${invoice.project}\n` +
+        `📅 <b>Datum:</b> ${invoice.date}\n` +
+        `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
+        `<b>Status:</b> Ausstehend ⏳`,
+        { 
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback('✅ BEZAHLT', `p_${invoice.id}`),
+              Markup.button.callback('⏰ ERINNERUNG', `r_${invoice.id}`)
+            ],
+            [
+              Markup.button.callback('🔄 RÜCKGÄNGIG', `u_${invoice.id}`)
+            ]
+          ]),
+          disable_web_page_preview: true 
+        }
+      );
+    } catch (e) {
+      console.log('⚠️ Edit Message Error (rückgängig):', e.message);
+    }
+
+  } catch (error) {
+    console.log('⚠️ Button Error (rückgängig):', error.message);
+  }
 });
 
 // ERINNERUNG Button
 bot.action(/^r_(.+)/, async (ctx) => {
-  const id = parseInt(ctx.match[1]);
-  const invoice = invoices.get(id);
-  
-  if (!invoice) {
-    await ctx.answerCbQuery('❌ Rechnung nicht gefunden');
-    return;
+  try {
+    const id = parseInt(ctx.match[1]);
+    const invoice = invoices.get(id);
+    
+    if (!invoice) {
+      try {
+        await ctx.answerCbQuery('❌ Rechnung nicht gefunden');
+      } catch (e) {
+        console.log('⚠️ Query zu alt (erinnerung):', e.message);
+      }
+      return;
+    }
+
+    try {
+      await ctx.answerCbQuery('📅 Tag wählen:');
+    } catch (e) {
+      console.log('⚠️ Query zu alt (erinnerung answer):', e.message);
+    }
+
+    const buttons = Markup.inlineKeyboard([
+      [
+        Markup.button.callback('Mo', `rd_${id}_1`),
+        Markup.button.callback('Di', `rd_${id}_2`),
+        Markup.button.callback('Mi', `rd_${id}_3`)
+      ],
+      [
+        Markup.button.callback('Do', `rd_${id}_4`),
+        Markup.button.callback('Fr', `rd_${id}_5`)
+      ]
+    ]);
+
+    const shortName = invoice.fileName.length > 35 ? 
+                     invoice.fileName.substring(0, 32) + '...' : 
+                     invoice.fileName;
+
+    try {
+      await ctx.editMessageText(
+        `📅 <b>Erinnerung setzen</b>\n\n` +
+        `📄 <b>Rechnung:</b> ${shortName}\n\n` +
+        `Welcher Tag?`,
+        { parse_mode: 'HTML', ...buttons }
+      );
+    } catch (e) {
+      console.log('⚠️ Edit Message Error (erinnerung):', e.message);
+    }
+
+  } catch (error) {
+    console.log('⚠️ Button Error (erinnerung):', error.message);
   }
-
-  await ctx.answerCbQuery('📅 Tag wählen:');
-
-  const buttons = Markup.inlineKeyboard([
-    [
-      Markup.button.callback('Mo', `rd_${id}_1`),
-      Markup.button.callback('Di', `rd_${id}_2`),
-      Markup.button.callback('Mi', `rd_${id}_3`)
-    ],
-    [
-      Markup.button.callback('Do', `rd_${id}_4`),
-      Markup.button.callback('Fr', `rd_${id}_5`)
-    ]
-  ]);
-
-  const shortName = invoice.fileName.length > 35 ? 
-                   invoice.fileName.substring(0, 32) + '...' : 
-                   invoice.fileName;
-
-  await ctx.editMessageText(
-    `📅 <b>Erinnerung setzen</b>\n\n` +
-    `📄 <b>Rechnung:</b> ${shortName}\n\n` +
-    `Welcher Tag?`,
-    { parse_mode: 'HTML', ...buttons }
-  );
 });
 
 // Tag gewählt
 bot.action(/^rd_(.+)_(.+)/, async (ctx) => {
-  const id = parseInt(ctx.match[1]);
-  const day = parseInt(ctx.match[2]);
-  
-  await ctx.answerCbQuery('🕐 Zeit wählen:');
+  try {
+    const id = parseInt(ctx.match[1]);
+    const day = parseInt(ctx.match[2]);
+    
+    try {
+      await ctx.answerCbQuery('🕐 Zeit wählen:');
+    } catch (e) {
+      console.log('⚠️ Query zu alt (tag):', e.message);
+    }
 
-  const buttons = Markup.inlineKeyboard([
-    [
-      Markup.button.callback('10:00', `dt_${id}_${day}_10`),
-      Markup.button.callback('16:00', `dt_${id}_${day}_16`)
-    ]
-  ]);
+    const buttons = Markup.inlineKeyboard([
+      [
+        Markup.button.callback('10:00', `dt_${id}_${day}_10`),
+        Markup.button.callback('16:00', `dt_${id}_${day}_16`)
+      ]
+    ]);
 
-  const dayNames = ['', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag'];
-  
-  await ctx.editMessageText(
-    `🕐 <b>Uhrzeit wählen</b>\n\n` +
-    `📅 <b>Tag:</b> ${dayNames[day]}\n\n` +
-    `Welche Uhrzeit?`,
-    { parse_mode: 'HTML', ...buttons }
-  );
+    const dayNames = ['', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag'];
+    
+    try {
+      await ctx.editMessageText(
+        `🕐 <b>Uhrzeit wählen</b>\n\n` +
+        `📅 <b>Tag:</b> ${dayNames[day]}\n\n` +
+        `Welche Uhrzeit?`,
+        { parse_mode: 'HTML', ...buttons }
+      );
+    } catch (e) {
+      console.log('⚠️ Edit Message Error (tag):', e.message);
+    }
+
+  } catch (error) {
+    console.log('⚠️ Button Error (tag):', error.message);
+  }
 });
 
 // Zeit gewählt - Erinnerung setzen
 bot.action(/^dt_(.+)_(.+)_(.+)/, async (ctx) => {
-  const id = parseInt(ctx.match[1]);
-  const targetDay = parseInt(ctx.match[2]);
-  const targetHour = parseInt(ctx.match[3]);
-  const invoice = invoices.get(id);
-  
-  if (!invoice) {
-    await ctx.answerCbQuery('❌ Rechnung nicht gefunden');
-    return;
-  }
-  
-  await ctx.answerCbQuery('✅ Erinnerung gesetzt!');
-  
   try {
+    const id = parseInt(ctx.match[1]);
+    const targetDay = parseInt(ctx.match[2]);
+    const targetHour = parseInt(ctx.match[3]);
+    const invoice = invoices.get(id);
+    
+    if (!invoice) {
+      try {
+        await ctx.answerCbQuery('❌ Rechnung nicht gefunden');
+      } catch (e) {
+        console.log('⚠️ Query zu alt (zeit):', e.message);
+      }
+      return;
+    }
+
+    try {
+      await ctx.answerCbQuery('✅ Erinnerung gesetzt!');
+    } catch (e) {
+      console.log('⚠️ Query zu alt (zeit answer):', e.message);
+    }
+
     const reminderDate = getNextWeekday(targetDay, targetHour);
     const timeUntilReminder = reminderDate.getTime() - Date.now();
     
@@ -377,33 +457,36 @@ bot.action(/^dt_(.+)_(.+)_(.+)/, async (ctx) => {
                      invoice.fileName;
     
     // EDITIERE Original-Nachricht zu "Erinnerung gesetzt"
-    await ctx.editMessageText(
-      `⏰ <b>Erinnerung gesetzt</b>\n\n` +
-      `📄 <b>Datei:</b> ${shortName}\n` +
-      `💰 <b>Typ:</b> ${invoice.type}\n` +
-      `🏢 <b>Projekt:</b> ${invoice.project}\n` +
-      `📅 <b>Datum:</b> ${invoice.date}\n` +
-      `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
-      `⏰ <b>Erinnerung:</b> ${dayNames[targetDay]}, ${formattedDate} um ${targetHour}:00 Uhr\n` +
-      `<b>Status:</b> Ausstehend mit Erinnerung 🔔`,
-      { 
-        parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([
-          [
-            Markup.button.callback('✅ BEZAHLT', `p_${invoice.id}`)
-          ],
-          [
-            Markup.button.callback('⏰ NEUE ERINNERUNG', `r_${invoice.id}`),
-            Markup.button.callback('🔄 RÜCKGÄNGIG', `u_${invoice.id}`)
-          ]
-        ]),
-        disable_web_page_preview: true 
-      }
-    );
+    try {
+      await ctx.editMessageText(
+        `⏰ <b>Erinnerung gesetzt</b>\n\n` +
+        `📄 <b>Datei:</b> ${shortName}\n` +
+        `💰 <b>Typ:</b> ${invoice.type}\n` +
+        `🏢 <b>Projekt:</b> ${invoice.project}\n` +
+        `📅 <b>Datum:</b> ${invoice.date}\n` +
+        `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
+        `⏰ <b>Erinnerung:</b> ${dayNames[targetDay]}, ${formattedDate} um ${targetHour}:00 Uhr\n` +
+        `<b>Status:</b> Ausstehend mit Erinnerung 🔔`,
+        { 
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback('✅ BEZAHLT', `p_${invoice.id}`)
+            ],
+            [
+              Markup.button.callback('⏰ NEUE ERINNERUNG', `r_${invoice.id}`),
+              Markup.button.callback('🔄 RÜCKGÄNGIG', `u_${invoice.id}`)
+            ]
+          ]),
+          disable_web_page_preview: true 
+        }
+      );
+    } catch (e) {
+      console.log('⚠️ Edit Message Error (zeit):', e.message);
+    }
     
   } catch (error) {
     console.error('Erinnerung Fehler:', error);
-    ctx.reply('❌ Fehler beim Setzen der Erinnerung.');
   }
 });
 
@@ -433,29 +516,42 @@ function sendReminderNotification(telegram, chatId, invoice) {
     `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
     `⚠️ <b>Diese Rechnung ist noch nicht bezahlt!</b>`;
 
-  telegram.sendMessage(chatId, message, { 
-    parse_mode: 'HTML', 
-    ...buttons,
-    disable_web_page_preview: true 
-  });
+  try {
+    telegram.sendMessage(chatId, message, { 
+      parse_mode: 'HTML', 
+      ...buttons,
+      disable_web_page_preview: true 
+    });
+  } catch (error) {
+    console.log('⚠️ Send Reminder Error:', error.message);
+  }
 }
 
 // Snooze (2h später erinnern)
 bot.action(/^s_(.+)_(.+)/, async (ctx) => {
-  const id = parseInt(ctx.match[1]);
-  const hours = parseInt(ctx.match[2]);
-  
-  await ctx.answerCbQuery(`⏰ Erinnere in ${hours}h`);
-  
-  const timerId = setTimeout(() => {
-    const invoice = invoices.get(id);
-    if (invoice && invoice.status === 'pending') {
-      sendReminderNotification(ctx.telegram, ctx.chat.id, invoice);
+  try {
+    const id = parseInt(ctx.match[1]);
+    const hours = parseInt(ctx.match[2]);
+    
+    try {
+      await ctx.answerCbQuery(`⏰ Erinnere in ${hours}h`);
+    } catch (e) {
+      console.log('⚠️ Query zu alt (snooze):', e.message);
     }
-    reminders.delete(`${id}_snooze`);
-  }, hours * 60 * 60 * 1000);
-  
-  reminders.set(`${id}_snooze`, timerId);
+
+    const timerId = setTimeout(() => {
+      const invoice = invoices.get(id);
+      if (invoice && invoice.status === 'pending') {
+        sendReminderNotification(ctx.telegram, ctx.chat.id, invoice);
+      }
+      reminders.delete(`${id}_snooze`);
+    }, hours * 60 * 60 * 1000);
+
+    reminders.set(`${id}_snooze`, timerId);
+
+  } catch (error) {
+    console.log('⚠️ Button Error (snooze):', error.message);
+  }
 });
 
 // =============== ADMIN COMMANDS ===============
@@ -470,7 +566,11 @@ bot.command('start', async (ctx) => {
     `<b>Test:</b> /rechnung\n` +
     `<b>Status:</b> /status`;
 
-  await ctx.reply(message, { parse_mode: 'HTML' });
+  try {
+    await ctx.reply(message, { parse_mode: 'HTML' });
+  } catch (error) {
+    console.log('⚠️ Start Command Error:', error.message);
+  }
 });
 
 bot.command('rechnung', async (ctx) => {
@@ -485,7 +585,7 @@ bot.command('rechnung', async (ctx) => {
     status: 'pending',
     createdAt: new Date().toISOString()
   };
-  
+
   invoices.set(999, testInvoice);
   await sendInvoiceMessage(ctx, testInvoice);
 });
@@ -504,11 +604,16 @@ bot.command('status', async (ctx) => {
     `🔵 <b>Uptime:</b> ${uptime} Min\n` +
     `✅ <b>Status:</b> Online ✅`;
 
-  await ctx.reply(message, { parse_mode: 'HTML' });
+  try {
+    await ctx.reply(message, { parse_mode: 'HTML' });
+  } catch (error) {
+    console.log('⚠️ Status Command Error:', error.message);
+  }
 });
 
 bot.command('memory', async (ctx) => {
   const memory = getMemoryUsage();
+
   const message = 
     `💾 <b>Memory Details</b>\n\n` +
     `<b>RSS:</b> ${memory.rss}MB\n` +
@@ -518,12 +623,17 @@ bot.command('memory', async (ctx) => {
     `<b>Invoices:</b> ${invoices.size}\n` +
     `<b>Reminders:</b> ${reminders.size}`;
 
-  await ctx.reply(message, { parse_mode: 'HTML' });
+  try {
+    await ctx.reply(message, { parse_mode: 'HTML' });
+  } catch (error) {
+    console.log('⚠️ Memory Command Error:', error.message);
+  }
 });
 
-// =============== ERROR HANDLING & STARTUP ===============
+// =============== CRASH-SAFE ERROR HANDLING ===============
 bot.catch((err, ctx) => {
-  console.error('Bot Fehler:', err);
+  console.error('⚠️ Bot Fehler:', err.message);
+  // Bot läuft weiter auch bei Fehlern!
 });
 
 // Webhook für Production setzen
