@@ -253,7 +253,7 @@ bot.action(/^p_(.+)/, async (ctx) => {
 
 // 🆕 ADMIN BENACHRICHTIGUNG
 try {
-  await ctx.telegram.sendMessage(ctx.chat.id, 
+  await ctx.telegram.sendMessage('928884613', 
     `🔔 <b>ADMIN INFO: RECHNUNG BEZAHLT</b>\n\n` +
     `👤 <b>Von:</b> ${ctx.from.username || ctx.from.first_name}\n` +
     `📄 <b>Rechnung:</b> ${invoice.fileName.substring(0, 35)}\n` +
