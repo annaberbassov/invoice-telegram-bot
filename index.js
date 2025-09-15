@@ -1,7 +1,12 @@
-const { Telegraf, Markup } = require('telegraf');
+// 1. Core modules
 const http = require('http');
 const https = require('https');
 
+// 2. npm modules  
+const { Telegraf, Markup } = require('telegraf');
+
+// 3. Own modules
+const { saveMessageId, getMessageData } = require('./storage');
 console.log('🚀 A&A Backoffice Bot startet...');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -189,11 +194,15 @@ async function sendInvoiceMessage(ctx, invoice) {
     `<b>Status:</b> Ausstehend ⏳`;
 
   try {
-    await ctx.reply(message, { 
-      parse_mode: 'HTML', 
-      ...buttons,
-      disable_web_page_preview: true 
-    });
+  const sentMessage = await ctx.reply(message, { 
+  parse_mode: 'HTML', 
+  ...buttons,
+  disable_web_page_preview: true 
+});
+
+// 🆕 Message ID speichern für später!
+saveMessageId(invoice.id, sentMessage.message_id, ctx.chat.id);
+
   } catch (error) {
     console.log('⚠️ Send Message Error:', error.message);
   }
@@ -509,10 +518,11 @@ const timeUntilReminder = reminderDate.getTime() - cestNow.getTime();
 
 // =============== REMINDER NOTIFICATION ===============
 function sendReminderNotification(telegram, chatId, invoice) {
+  const msgData = getMessageData(invoice.id);
   const shortName = invoice.fileName.length > 35 ? 
                    invoice.fileName.substring(0, 32) + '...' : 
                    invoice.fileName;
-
+  
   const buttons = Markup.inlineKeyboard([
     [
       Markup.button.callback('✅ BEZAHLT', `p_${invoice.id}`)
@@ -533,43 +543,48 @@ function sendReminderNotification(telegram, chatId, invoice) {
     `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
     `⚠️ <b>Diese Rechnung ist noch nicht bezahlt!</b>`;
 
-  try {
-    telegram.sendMessage(chatId, message, { 
-      parse_mode: 'HTML', 
-      ...buttons,
-      disable_web_page_preview: true 
-    });
-  } catch (error) {
-    console.log('⚠️ Send Reminder Error:', error.message);
+  if (msgData) {
+    // 🆕 EDIT original message statt neue senden!
+    try {
+      telegram.editMessageText(
+        msgData.chat_id,
+        msgData.message_id,
+        undefined, // inline_message_id
+        message,
+        { 
+          parse_mode: 'HTML', 
+          reply_markup: buttons.reply_markup,
+          disable_web_page_preview: true 
+        }
+      );
+      console.log(`✅ Edited message ${msgData.message_id} for reminder`);
+    } catch (error) {
+      console.log('⚠️ Edit failed, sending new:', error.message);
+      // Fallback: neue Nachricht
+      try {
+        telegram.sendMessage(chatId, message, { 
+          parse_mode: 'HTML', 
+          ...buttons,
+          disable_web_page_preview: true 
+        });
+      } catch (error) {
+        console.log('⚠️ Send Reminder Error:', error.message);
+      }
+    }
+  } else {
+    // Keine gespeicherte Message-ID → neue Nachricht senden
+    try {
+      telegram.sendMessage(chatId, message, { 
+        parse_mode: 'HTML', 
+        ...buttons,
+        disable_web_page_preview: true 
+      });
+    } catch (error) {
+      console.log('⚠️ Send Reminder Error:', error.message);
+    }
   }
 }
 
-// Snooze (2h später erinnern)
-bot.action(/^s_(.+)_(.+)/, async (ctx) => {
-  try {
-    const id = parseInt(ctx.match[1]);
-    const hours = parseInt(ctx.match[2]);
-    
-    try {
-      await ctx.answerCbQuery(`⏰ Erinnere in ${hours}h`);
-    } catch (e) {
-      console.log('⚠️ Query zu alt (snooze):', e.message);
-    }
-
-    const timerId = setTimeout(() => {
-      const invoice = invoices.get(id);
-      if (invoice && invoice.status === 'pending') {
-        sendReminderNotification(ctx.telegram, ctx.chat.id, invoice);
-      }
-      reminders.delete(`${id}_snooze`);
-    }, hours * 60 * 60 * 1000);
-
-    reminders.set(`${id}_snooze`, timerId);
-
-  } catch (error) {
-    console.log('⚠️ Button Error (snooze):', error.message);
-  }
-});
 
 // =============== ADMIN COMMANDS ===============
 bot.command('start', async (ctx) => {
