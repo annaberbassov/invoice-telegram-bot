@@ -1,16 +1,29 @@
 // 1. Core modules
 const http = require('http');
 const https = require('https');
-
 // 2. npm modules  
 const { Telegraf, Markup } = require('telegraf');
+// 3. Own modules - 🆕 ERWEITERT!
+const { saveMessageId, getMessageData, saveInvoiceData, loadAllInvoices, getInvoiceData } = require('./storage');
 
-// 3. Own modules
-const { saveMessageId, getMessageData } = require('./storage');
 console.log('🚀 A&A Backoffice Bot startet...');
-
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const PORT = process.env.PORT || 3000;
+
+// 🆕 NEU HINZUFÜGEN - direkt nach den Konstanten:
+// =============== BOT STATE MANAGEMENT ===============
+const invoices = new Map();
+const reminders = new Map();
+let invoiceCounter = 1;
+
+// 🆕 Load invoices from database on startup
+(async () => {
+  const persistentInvoices = await loadAllInvoices();
+  for (const [id, invoice] of Object.entries(persistentInvoices)) {
+    invoices.set(parseInt(id), invoice);
+  }
+  console.log(`✅ Loaded ${Object.keys(persistentInvoices).length} invoices from database`);
+})();
 
 // HTTP Server mit Webhook Handler
 const server = http.createServer((req, res) => {
@@ -156,7 +169,8 @@ bot.hears(/^\/invoice_data:(.+)/, async (ctx) => {
     
     invoices.set(invoice.id, invoice);
     console.log(`📄 Neue Rechnung: ${invoice.fileName} (ID: ${invoice.id})`);
-    
+    // 🆕 NEU: Save to database
+await saveInvoiceData(invoice);
     await sendInvoiceMessage(ctx, invoice);
     
   } catch (error) {
