@@ -251,6 +251,20 @@ bot.action(/^p_(.+)/, async (ctx) => {
       notifyAppsScript('move_to_paid', invoice.fileId);
     }
 
+// 🆕 ADMIN BENACHRICHTIGUNG
+try {
+  await ctx.telegram.sendMessage(ctx.chat.id, 
+    `🔔 <b>ADMIN INFO: RECHNUNG BEZAHLT</b>\n\n` +
+    `👤 <b>Von:</b> ${ctx.from.username || ctx.from.first_name}\n` +
+    `📄 <b>Rechnung:</b> ${invoice.fileName.substring(0, 35)}\n` +
+    `💰 <b>Projekt:</b> ${invoice.project}\n` +
+    `⏰ <b>Zeit:</b> ${new Date().toLocaleString('de-DE')}\n\n` +
+    `✅ Automatisch auf BEZAHLT gesetzt!`,
+    { parse_mode: 'HTML' }
+  );
+} catch (e) {
+  console.log('⚠️ Admin notification failed:', e.message);
+}
     const shortName = invoice.fileName.length > 35 ? 
                      invoice.fileName.substring(0, 32) + '...' : 
                      invoice.fileName;
