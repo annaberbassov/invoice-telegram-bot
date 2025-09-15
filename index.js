@@ -55,10 +55,6 @@ server.listen(PORT, () => {
   console.log(`✅ HTTP Server läuft auf Port ${PORT}`);
 });
 
-// =============== BOT STATE MANAGEMENT ===============
-const invoices = new Map();
-const reminders = new Map();
-let invoiceCounter = 1;
 
 // =============== MEMORY MONITORING ===============
 function getMemoryUsage() {
