@@ -211,7 +211,9 @@ async function sendInvoiceMessage(ctx, invoice) {
 });
 
 // 🆕 Message ID speichern für später!
-saveMessageId(invoice.id, sentMessage.message_id, ctx.chat.id);
+await saveMessageId(invoice.id, sentMessage.message_id, ctx.chat.id);
+console.log(`✅ Saved message_id ${sentMessage.message_id} for invoice ${invoice.id}`);
+
 
   } catch (error) {
     console.log('⚠️ Send Message Error:', error.message);
