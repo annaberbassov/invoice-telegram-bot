@@ -14,7 +14,6 @@ const PORT = process.env.PORT || 3000;
 // =============== BOT STATE MANAGEMENT ===============
 const invoices = new Map();
 const reminders = new Map();
-let invoiceCounter = 1;
 
 // 🆕 Load invoices from database on startup
 (async () => {
@@ -152,7 +151,6 @@ bot.hears(/^\/invoice_data:(.+)/, async (ctx) => {
     const invoiceData = JSON.parse(jsonData);
     
     const invoice = {
-      id: invoiceCounter++,
       fileName: invoiceData.name,
       type: invoiceData.keyword,
       project: invoiceData.project,
@@ -165,9 +163,11 @@ bot.hears(/^\/invoice_data:(.+)/, async (ctx) => {
     
     invoices.set(invoice.id, invoice);
     console.log(`📄 Neue Rechnung: ${invoice.fileName} (ID: ${invoice.id})`);
-    // 🆕 NEU: Save to database
-await saveInvoiceData(invoice);
-    await sendInvoiceMessage(ctx, invoice);
+    // 🆕 NEU: Save to database und ID bekommen
+const newId = await saveInvoiceData(invoice);
+invoice.id = newId; // ID von der Datenbank verwenden
+await sendInvoiceMessage(ctx, invoice);
+
     
   } catch (error) {
     console.error('Invoice Data Error:', error);
