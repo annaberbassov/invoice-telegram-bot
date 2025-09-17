@@ -52,15 +52,19 @@ async function removeMessageData(invoiceId) {
 // Invoice Data Functions
 async function saveInvoiceData(invoice) {
   try {
-    await pool.query(
-      'INSERT INTO invoice_data (invoice_id, file_name, type, project, date, file_id, drive_url, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (invoice_id) DO UPDATE SET file_name = $2, type = $3, project = $4, date = $5, file_id = $6, drive_url = $7, status = $8',
-      [invoice.id, invoice.fileName, invoice.type, invoice.project, invoice.date, invoice.fileId, invoice.driveUrl, invoice.status]
+    const result = await pool.query(
+      'INSERT INTO invoice_data (file_name, type, project, date, file_id, drive_url, status) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING invoice_id',
+      [invoice.fileName, invoice.type, invoice.project, invoice.date, invoice.fileId, invoice.driveUrl, invoice.status]
     );
-    console.log(`✅ Saved invoice data for ID ${invoice.id}`);
+    const newId = result.rows[0].invoice_id;
+    console.log(`✅ Saved invoice data for ID ${newId}`);
+    return newId;
   } catch (error) {
     console.error('❌ Save Invoice Error:', error);
+    throw error;
   }
 }
+
 
 async function loadAllInvoices() {
   try {
