@@ -161,9 +161,6 @@ bot.hears(/^\/invoice_data:(.+)/, async (ctx) => {
       createdAt: new Date().toISOString()
     };
     
-    invoices.set(invoice.id, invoice);
-    console.log(`📄 Neue Rechnung: ${invoice.fileName} (ID: ${invoice.id})`);
-    // 🆕 NEU: Save to database und ID bekommen
 // 🆕 NEU: Save to database und ID bekommen
 const newId = await saveInvoiceData(invoice);
 if (newId) {
