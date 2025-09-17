@@ -61,7 +61,7 @@ async function saveInvoiceData(invoice) {
     return newId;
   } catch (error) {
     console.error('❌ Save Invoice Error:', error);
-    throw error;
+    return null; // ← HINZUFÜGEN: null zurückgeben statt throw
   }
 }
 
