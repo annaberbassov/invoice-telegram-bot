@@ -164,9 +164,11 @@ bot.hears(/^\/invoice_data:(.+)/, async (ctx) => {
     invoices.set(invoice.id, invoice);
     console.log(`📄 Neue Rechnung: ${invoice.fileName} (ID: ${invoice.id})`);
     // 🆕 NEU: Save to database und ID bekommen
-const newId = await saveInvoiceData(invoice);
+const newId = invoices.set(invoice);
 invoice.id = newId; // ID von der Datenbank verwenden
+invoices.set(newId, invoice); // Mit neuer ID in Memory speichern
 await sendInvoiceMessage(ctx, invoice);
+
 
     
   } catch (error) {
