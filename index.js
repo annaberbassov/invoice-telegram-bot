@@ -558,26 +558,29 @@ function sendReminderNotification(telegram, chatId, invoice) {
     console.log(`❌ DEBUG: No valid message data, sending new message instead`);
     
     // FALLBACK: Neue Nachricht senden
+        // FALLBACK: Neue Nachricht senden mit Link
     const message = 
       `🔔 <b>ERINNERUNG</b>\n\n` +
       `📄 <b>Rechnung:</b> ${invoice.fileName.substring(0, 35)}\n` +
-      `💰 <b>Typ:</b> ${invoice.type}\n` +
-      `🏢 <b>Projekt:</b> ${invoice.project}\n` +
-      `📅 <b>Datum:</b> ${invoice.date}\n` +
-      `⏰ <b>Zeit:</b> ${new Date().toLocaleTimeString('de-DE')}\n\n` +
-      `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
-      `⚠️ <b>Diese Rechnung ist noch nicht bezahlt!</b>`;
+      `⚠️ <b>Noch nicht bezahlt!</b>\n\n` +
+      `👆 <b>Klicke unten um zur Original-Rechnung zu springen:</b>`;
+      
+    // Da msgData im Fallback null ist, verwende default message_id
+    const messageLink = msgData?.message_id ? 
+      `https://t.me/c/490080950/${msgData.message_id}` : 
+      `https://t.me/c/490080950/1`;
       
     try {
       telegram.sendMessage(chatId, message, { 
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [[
-            { text: '✅ BEZAHLT', callback_data: `p_${invoice.id}` }
+            { text: '📋 Zur Original-Rechnung', url: messageLink }
           ]]
         },
         disable_web_page_preview: true 
       });
+
       console.log(`✅ DEBUG: Sent fallback reminder for invoice ${invoice.id}`);
     } catch (error) {
       console.log('⚠️ DEBUG: Fallback reminder failed:', error.message);
