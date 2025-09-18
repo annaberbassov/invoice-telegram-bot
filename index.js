@@ -549,11 +549,46 @@ const timeUntilReminder = reminderDate.getTime() - cestNow.getTime();
 
 // =============== REMINDER NOTIFICATION ===============
 function sendReminderNotification(telegram, chatId, invoice) {
+  console.log(`🔍 DEBUG: Looking for message data for invoice ${invoice.id}`);
   const msgData = getMessageData(invoice.id);
+  console.log(`📊 DEBUG: Found message data:`, msgData);
+  
+  // FALLBACK CHECK
+  if (!msgData || !msgData.message_id || !msgData.chat_id) {
+    console.log(`❌ DEBUG: No valid message data, sending new message instead`);
+    
+    // FALLBACK: Neue Nachricht senden
+    const message = 
+      `🔔 <b>ERINNERUNG</b>\n\n` +
+      `📄 <b>Rechnung:</b> ${invoice.fileName.substring(0, 35)}\n` +
+      `💰 <b>Typ:</b> ${invoice.type}\n` +
+      `🏢 <b>Projekt:</b> ${invoice.project}\n` +
+      `📅 <b>Datum:</b> ${invoice.date}\n` +
+      `⏰ <b>Zeit:</b> ${new Date().toLocaleTimeString('de-DE')}\n\n` +
+      `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
+      `⚠️ <b>Diese Rechnung ist noch nicht bezahlt!</b>`;
+      
+    try {
+      telegram.sendMessage(chatId, message, { 
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '✅ BEZAHLT', callback_data: `p_${invoice.id}` }
+          ]]
+        },
+        disable_web_page_preview: true 
+      });
+      console.log(`✅ DEBUG: Sent fallback reminder for invoice ${invoice.id}`);
+    } catch (error) {
+      console.log('⚠️ DEBUG: Fallback reminder failed:', error.message);
+    }
+    return;
+  }
+  
+  console.log(`✅ DEBUG: Attempting to edit message ${msgData.message_id} in chat ${msgData.chat_id}`);
   const shortName = invoice.fileName.length > 35 ? 
                    invoice.fileName.substring(0, 32) + '...' : 
                    invoice.fileName;
-  
   const buttons = Markup.inlineKeyboard([
     [
       Markup.button.callback('✅ BEZAHLT', `p_${invoice.id}`)
@@ -563,7 +598,6 @@ function sendReminderNotification(telegram, chatId, invoice) {
       Markup.button.callback('⏰ Neue Erinnerung', `r_${invoice.id}`)
     ]
   ]);
-
   const message = 
     `🔔 <b>ERINNERUNG</b>\n\n` +
     `📄 <b>Rechnung:</b> ${shortName}\n` +
@@ -573,147 +607,37 @@ function sendReminderNotification(telegram, chatId, invoice) {
     `⏰ <b>Zeit:</b> ${new Date().toLocaleTimeString('de-DE')}\n\n` +
     `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
     `⚠️ <b>Diese Rechnung ist noch nicht bezahlt!</b>`;
-
-  if (msgData) {
-    // 🆕 EDIT original message statt neue senden!
-    try {
-      telegram.editMessageText(
-        msgData.chat_id,
-        msgData.message_id,
-        undefined, // inline_message_id
-        message,
-        { 
-          parse_mode: 'HTML', 
-          reply_markup: buttons.reply_markup,
-          disable_web_page_preview: true 
-        }
-      );
-      console.log(`✅ Edited message ${msgData.message_id} for reminder`);
-    } catch (error) {
-      console.log('⚠️ Edit failed, sending new:', error.message);
-      // Fallback: neue Nachricht
-      try {
-        telegram.sendMessage(chatId, message, { 
-          parse_mode: 'HTML', 
-          ...buttons,
-          disable_web_page_preview: true 
-        });
-      } catch (error) {
-        console.log('⚠️ Send Reminder Error:', error.message);
+  
+  // EDIT original message
+  try {
+    telegram.editMessageText(
+      msgData.chat_id,
+      msgData.message_id,
+      undefined, // inline_message_id
+      message,
+      { 
+        parse_mode: 'HTML', 
+        reply_markup: buttons.reply_markup,
+        disable_web_page_preview: true 
       }
-    }
-  } else {
-    // Keine gespeicherte Message-ID → neue Nachricht senden
+    );
+    console.log(`✅ DEBUG: Successfully edited message ${msgData.message_id}`);
+  } catch (error) {
+    console.log('⚠️ DEBUG: Edit failed, sending new:', error.message);
+    // Fallback: neue Nachricht
     try {
       telegram.sendMessage(chatId, message, { 
         parse_mode: 'HTML', 
         ...buttons,
         disable_web_page_preview: true 
       });
+      console.log(`✅ DEBUG: Sent new message as fallback`);
     } catch (error) {
-      console.log('⚠️ Send Reminder Error:', error.message);
+      console.log('⚠️ DEBUG: Send Reminder Error:', error.message);
     }
   }
 }
 
-
-// =============== ADMIN COMMANDS ===============
-bot.command('start', async (ctx) => {
-  const message = 
-    `🤖 <b>A&A Backoffice Bot gestartet!</b>\n\n` +
-    `📋 <b>Funktionen:</b>\n` +
-    `✅ Rechnungen verarbeiten\n` +
-    `💰 Bezahlt/Rückgängig\n` +
-    `⏰ Erinnerungen (Mo-Fr, 10/16 Uhr)\n` +
-    `📁 Drive-Integration\n\n` +
-    `<b>Test:</b> /rechnung\n` +
-    `<b>Status:</b> /status`;
-
-  try {
-    await ctx.reply(message, { parse_mode: 'HTML' });
-  } catch (error) {
-    console.log('⚠️ Start Command Error:', error.message);
-  }
-});
-
-bot.command('rechnung', async (ctx) => {
-  const testInvoice = {
-    id: 999,
-    fileName: 'mahnung_TestProjekt_2025_09_12.pdf',
-    type: 'mahnung',
-    project: 'TestProjekt',
-    date: '2025_09_12',
-    fileId: 'test123',
-    driveUrl: 'https://drive.google.com/file/d/test123/view',
-    status: 'pending',
-    createdAt: new Date().toISOString()
-  };
-
-  invoices.set(999, testInvoice);
-  await sendInvoiceMessage(ctx, testInvoice);
-});
-
-bot.command('status', async (ctx) => {
-  const memory = getMemoryUsage();
-  const activeInvoices = Array.from(invoices.values()).filter(inv => inv.status === 'pending').length;
-  const activeReminders = reminders.size;
-  const uptime = Math.floor(process.uptime() / 60);
-
-  const message = 
-    `📊 <b>Bot Status</b>\n\n` +
-    `📄 <b>Aktive Rechnungen:</b> ${activeInvoices}\n` +
-    `⏰ <b>Aktive Erinnerungen:</b> ${activeReminders}\n` +
-    `💾 <b>Memory:</b> ${memory.heapUsed}MB / 512MB\n` +
-    `🔵 <b>Uptime:</b> ${uptime} Min\n` +
-    `✅ <b>Status:</b> Online ✅`;
-
-  try {
-    await ctx.reply(message, { parse_mode: 'HTML' });
-  } catch (error) {
-    console.log('⚠️ Status Command Error:', error.message);
-  }
-});
-
-bot.command('memory', async (ctx) => {
-  const memory = getMemoryUsage();
-
-  const message = 
-    `💾 <b>Memory Details</b>\n\n` +
-    `<b>RSS:</b> ${memory.rss}MB\n` +
-    `<b>Heap Used:</b> ${memory.heapUsed}MB\n` +
-    `<b>Heap Total:</b> ${memory.heapTotal}MB\n` +
-    `<b>External:</b> ${memory.external}MB\n\n` +
-    `<b>Invoices:</b> ${invoices.size}\n` +
-    `<b>Reminders:</b> ${reminders.size}`;
-
-  try {
-    await ctx.reply(message, { parse_mode: 'HTML' });
-  } catch (error) {
-    console.log('⚠️ Memory Command Error:', error.message);
-  }
-});
-
-// =============== CRASH-SAFE ERROR HANDLING ===============
-bot.catch((err, ctx) => {
-  console.error('⚠️ Bot Fehler:', err.message);
-  // Bot läuft weiter auch bei Fehlern!
-});
-
-// Webhook für Production setzen
-if (process.env.NODE_ENV === 'production') {
-  const webhookUrl = 'https://invoice-telegram-bot.onrender.com/webhook';
-  bot.telegram.setWebhook(webhookUrl);
-  console.log(`🔗 Webhook gesetzt: ${webhookUrl}`);
-} else {
-  bot.launch();
-  console.log('🔄 Polling-Modus für Development');
-}
-
-console.log('✅ A&A BACKOFFICE BOT LÄUFT PERFEKT!');
-
-// Graceful shutdown
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
 
 
