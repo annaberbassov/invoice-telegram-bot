@@ -546,6 +546,72 @@ const timeUntilReminder = reminderDate.getTime() - cestNow.getTime();
     console.error('Erinnerung Fehler:', error);
   }
 });
+// GOTO Button - Zur Original-Rechnung springen
+bot.action(/^goto_(.+)/, async (ctx) => {
+  try {
+    const id = parseInt(ctx.match[1]);
+    const invoice = invoices.get(id);
+    
+    if (!invoice) {
+      try {
+        await ctx.answerCbQuery('❌ Rechnung nicht gefunden');
+      } catch (e) {
+        console.log('⚠️ Query zu alt (goto):', e.message);
+      }
+      return;
+    }
+    
+    try {
+      await ctx.answerCbQuery('📋 Zur Original-Rechnung...');
+    } catch (e) {
+      console.log('⚠️ Query zu alt (goto answer):', e.message);
+    }
+    
+    // Original-Message finden und zu "Erinnerungs-Modus" editieren
+    const msgData = getMessageData(invoice.id);
+    if (msgData && msgData.message_id && msgData.chat_id) {
+      const shortName = invoice.fileName.length > 35 ? 
+                       invoice.fileName.substring(0, 32) + '...' : 
+                       invoice.fileName;
+                       
+      try {
+        await ctx.telegram.editMessageText(
+          msgData.chat_id,
+          msgData.message_id,
+          undefined,
+          `🔔 <b>ERINNERUNG</b>\n\n` +
+          `📄 <b>Datei:</b> ${shortName}\n` +
+          `💰 <b>Typ:</b> ${invoice.type}\n` +
+          `🏢 <b>Projekt:</b> ${invoice.project}\n` +
+          `📅 <b>Datum:</b> ${invoice.date}\n` +
+          `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
+          `⚠️ <b>Diese Rechnung ist noch nicht bezahlt!</b>`,
+          { 
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '✅ BEZAHLT', callback_data: `p_${invoice.id}` }],
+                [
+                  { text: '⏰ NEUE ERINNERUNG', callback_data: `r_${invoice.id}` },
+                  { text: '🔄 RÜCKGÄNGIG', callback_data: `u_${invoice.id}` }
+                ]
+              ]
+            },
+            disable_web_page_preview: true 
+          }
+        );
+        console.log(`✅ Edited original message to reminder mode for invoice ${invoice.id}`);
+      } catch (e) {
+        console.log('⚠️ Edit Message Error (goto):', e.message);
+      }
+    } else {
+      console.log(`❌ No message data found for invoice ${invoice.id}`);
+    }
+  } catch (error) {
+    console.log('⚠️ GOTO Button Error:', error.message);
+  }
+});
+
 
 // =============== REMINDER NOTIFICATION ===============
 function sendReminderNotification(telegram, chatId, invoice) {
@@ -556,7 +622,7 @@ function sendReminderNotification(telegram, chatId, invoice) {
   // FALLBACK CHECK
   if (!msgData || !msgData.message_id || !msgData.chat_id) {
     console.log(`❌ DEBUG: No valid message data, sending new message instead`);
-    
+
     // FALLBACK: Neue Nachricht senden
         // FALLBACK: Neue Nachricht senden mit Link
     const message = 
@@ -567,17 +633,17 @@ function sendReminderNotification(telegram, chatId, invoice) {
       
     // Da msgData im Fallback null ist, verwende default message_id
     const messageLink = msgData?.message_id ? 
-      `https://t.me/c/490080950/${msgData.message_id}` : 
-      `https://t.me/c/490080950/1`;
+      `https://t.me/c/4900809502/${msgData.message_id}` : 
+      `https://t.me/c/4900809502/1`;
       
     try {
       telegram.sendMessage(chatId, message, { 
         parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [[
-            { text: '📋 Zur Original-Rechnung', url: messageLink }
-          ]]
-        },
+       reply_markup: {
+  inline_keyboard: [[
+    { text: '📋 Zur Original-Rechnung', callback_data: `goto_${invoice.id}` }
+  ]]
+},
         disable_web_page_preview: true 
       });
 
