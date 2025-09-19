@@ -568,7 +568,7 @@ bot.action(/^goto_(.+)/, async (ctx) => {
     }
     
     // Original-Message finden und zu "Erinnerungs-Modus" editieren
-    const msgData = getMessageData(invoice.id);
+   const msgData = await getMessageData(invoice.id);
     if (msgData && msgData.message_id && msgData.chat_id) {
       const shortName = invoice.fileName.length > 35 ? 
                        invoice.fileName.substring(0, 32) + '...' : 
@@ -614,9 +614,9 @@ bot.action(/^goto_(.+)/, async (ctx) => {
 
 
 // =============== REMINDER NOTIFICATION ===============
-function sendReminderNotification(telegram, chatId, invoice) {
+async function sendReminderNotification(telegram, chatId, invoice) {
   console.log(`🔍 DEBUG: Looking for message data for invoice ${invoice.id}`);
-  const msgData = getMessageData(invoice.id);
+  const msgData = await getMessageData(invoice.id);
   console.log(`📊 DEBUG: Found message data:`, msgData);
   
   // FALLBACK CHECK
