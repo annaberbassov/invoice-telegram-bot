@@ -713,7 +713,7 @@ async function sendReminderNotification(telegram, chatId, invoice) {
   } catch (error) {
     console.log('⚠️ DEBUG: New reminder message failed:', error.message);
   }
-
+ }
 
 
 
