@@ -579,13 +579,13 @@ bot.action(/^goto_(.+)/, async (ctx) => {
           msgData.chat_id,
           msgData.message_id,
           undefined,
-          `🔔 <b>ERINNERUNG</b>\n\n` +
+          `📋 <b>RECHNUNG ÖFFNEN</b>\n\n` +
           `📄 <b>Datei:</b> ${shortName}\n` +
           `💰 <b>Typ:</b> ${invoice.type}\n` +
           `🏢 <b>Projekt:</b> ${invoice.project}\n` +
           `📅 <b>Datum:</b> ${invoice.date}\n` +
           `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
-          `⚠️ <b>Diese Rechnung ist noch nicht bezahlt!</b>`,
+          `🎯 <b>Jetzt bezahlen oder Erinnerung setzen!</b>`,
           { 
             parse_mode: 'HTML',
             reply_markup: {
