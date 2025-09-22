@@ -546,71 +546,6 @@ const timeUntilReminder = reminderDate.getTime() - cestNow.getTime();
     console.error('Erinnerung Fehler:', error);
   }
 });
-// GOTO Button - Zur Original-Rechnung springen
-bot.action(/^goto_(.+)/, async (ctx) => {
-  try {
-    const id = parseInt(ctx.match[1]);
-    const invoice = invoices.get(id);
-    
-    if (!invoice) {
-      try {
-        await ctx.answerCbQuery('❌ Rechnung nicht gefunden');
-      } catch (e) {
-        console.log('⚠️ Query zu alt (goto):', e.message);
-      }
-      return;
-    }
-    
-    try {
-      await ctx.answerCbQuery('📋 Zur Original-Rechnung...');
-    } catch (e) {
-      console.log('⚠️ Query zu alt (goto answer):', e.message);
-    }
-    
-    // Original-Message finden und zu "Erinnerungs-Modus" editieren
-   const msgData = await getMessageData(invoice.id);
-    if (msgData && msgData.message_id && msgData.chat_id) {
-      const shortName = invoice.fileName.length > 35 ? 
-                       invoice.fileName.substring(0, 32) + '...' : 
-                       invoice.fileName;
-                       
-      try {
-        await ctx.telegram.editMessageText(
-          msgData.chat_id,
-          msgData.message_id,
-          undefined,
-          `📋 <b>RECHNUNG ÖFFNEN</b>\n\n` +
-          `📄 <b>Datei:</b> ${shortName}\n` +
-          `💰 <b>Typ:</b> ${invoice.type}\n` +
-          `🏢 <b>Projekt:</b> ${invoice.project}\n` +
-          `📅 <b>Datum:</b> ${invoice.date}\n` +
-          `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
-          `🎯 <b>Jetzt bezahlen oder Erinnerung setzen!</b>`,
-          { 
-            parse_mode: 'HTML',
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: '✅ BEZAHLT', callback_data: `p_${invoice.id}` }],
-                [
-                  { text: '⏰ NEUE ERINNERUNG', callback_data: `r_${invoice.id}` },
-                  { text: '🔄 RÜCKGÄNGIG', callback_data: `u_${invoice.id}` }
-                ]
-              ]
-            },
-            disable_web_page_preview: true 
-          }
-        );
-        console.log(`✅ Edited original message to reminder mode for invoice ${invoice.id}`);
-      } catch (e) {
-        console.log('⚠️ Edit Message Error (goto):', e.message);
-      }
-    } else {
-      console.log(`❌ No message data found for invoice ${invoice.id}`);
-    }
-  } catch (error) {
-    console.log('⚠️ GOTO Button Error:', error.message);
-  }
-});
 
 // IN 2H ERINNERN Button
 bot.action(/^s_(.+)_(.+)/, async (ctx) => {
@@ -765,28 +700,27 @@ async function sendReminderNotification(telegram, chatId, invoice) {
     console.log('⚠️ DEBUG: Original message edit failed:', error.message);
   }
   
-  // 2️⃣ NEUE ERINNERUNGS-NACHRICHT SENDEN
-  const reminderMessage = 
-    `🔔 <b>ERINNERUNG</b>\n\n` +
-    `📄 <b>Rechnung:</b> ${invoice.fileName.substring(0, 35)}\n` +
-    `⚠️ <b>Noch nicht bezahlt!</b>\n\n` +
-    `👆 <b>Klicke unten um zur Original-Rechnung zu springen:</b>`;
-      
-  try {
-    await telegram.sendMessage(chatId, reminderMessage, { 
-      parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: [[
-          { text: '📋 Zur Original-Rechnung', callback_data: `goto_${invoice.id}` }
-        ]]
-      },
-      disable_web_page_preview: true 
-    });
-    console.log(`✅ DEBUG: Successfully sent new reminder message for invoice ${invoice.id}`);
-  } catch (error) {
-    console.log('⚠️ DEBUG: New reminder message failed:', error.message);
-  }
- }
+// 2️⃣ NEUE ERINNERUNGS-NACHRICHT SENDEN
+const reminderMessage = 
+  `🔔 <b>ERINNERUNG</b>\n\n` +
+  `📄 <b>Rechnung:</b> ${invoice.fileName.substring(0, 35)}\n` +
+  `⚠️ <b>Noch nicht bezahlt!</b>\n\n` +
+  `💡 <b>Original-Rechnung siehe oben!</b>`;
+    
+try {
+  await telegram.sendMessage(chatId, reminderMessage, { 
+    parse_mode: 'HTML',
+    reply_to_message_id: parseInt(msgData.message_id),
+    disable_web_page_preview: true 
+  });
+  console.log(`✅ DEBUG: Successfully sent reminder reply for invoice ${invoice.id}`);
+} catch (error) {
+  console.log('⚠️ DEBUG: Reminder reply failed:', error.message);
+}
+}
+
+
+
 
 
 
