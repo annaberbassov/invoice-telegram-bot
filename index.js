@@ -612,6 +612,79 @@ bot.action(/^goto_(.+)/, async (ctx) => {
   }
 });
 
+// IN 2H ERINNERN Button
+bot.action(/^s_(.+)_(.+)/, async (ctx) => {
+  try {
+    const id = parseInt(ctx.match[1]);
+    const hours = parseInt(ctx.match[2]);
+    const invoice = invoices.get(id);
+    
+    if (!invoice) {
+      try {
+        await ctx.answerCbQuery('❌ Rechnung nicht gefunden');
+      } catch (e) {
+        console.log('⚠️ Query zu alt (in2h):', e.message);
+      }
+      return;
+    }
+    
+    try {
+      await ctx.answerCbQuery(`✅ Erinnerung in ${hours}h gesetzt!`);
+    } catch (e) {
+      console.log('⚠️ Query zu alt (in2h answer):', e.message);
+    }
+    
+    const timeUntilReminder = hours * 60 * 60 * 1000; // Stunden zu Millisekunden
+    
+    const timerId = setTimeout(async () => {
+      await sendReminderNotification(ctx.telegram, ctx.chat.id, invoice);
+      reminders.delete(`${id}_reminder`);
+    }, timeUntilReminder);
+    
+    // Alten Timer löschen falls vorhanden
+    clearRemindersForInvoice(id);
+    reminders.set(`${id}_reminder`, timerId);
+    
+    console.log(`⏰ In-${hours}h Erinnerung ${id}: ${hours*60} Min`);
+    
+    // Original-Message zu "neue Erinnerung gesetzt" editieren
+    const shortName = invoice.fileName.length > 35 ? 
+                     invoice.fileName.substring(0, 32) + '...' : 
+                     invoice.fileName;
+    
+    try {
+      await ctx.editMessageText(
+        `⏰ <b>Neue Erinnerung gesetzt</b>\n\n` +
+        `📄 <b>Datei:</b> ${shortName}\n` +
+        `💰 <b>Typ:</b> ${invoice.type}\n` +
+        `🏢 <b>Projekt:</b> ${invoice.project}\n` +
+        `📅 <b>Datum:</b> ${invoice.date}\n` +
+        `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
+        `⏰ <b>Erinnerung in ${hours} Stunden</b>\n` +
+        `<b>Status:</b> Ausstehend mit Erinnerung 🔔`,
+        { 
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '✅ BEZAHLT', callback_data: `p_${invoice.id}` }],
+              [
+                { text: '⏰ NEUE ERINNERUNG', callback_data: `r_${invoice.id}` },
+                { text: '🔄 RÜCKGÄNGIG', callback_data: `u_${invoice.id}` }
+              ]
+            ]
+          },
+          disable_web_page_preview: true 
+        }
+      );
+    } catch (e) {
+      console.log('⚠️ Edit Message Error (in2h):', e.message);
+    }
+    
+  } catch (error) {
+    console.log('⚠️ In 2h Button Error:', error.message);
+  }
+});
+
 
 // =============== REMINDER NOTIFICATION ===============
 async function sendReminderNotification(telegram, chatId, invoice) {
