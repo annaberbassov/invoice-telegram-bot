@@ -654,58 +654,66 @@ async function sendReminderNotification(telegram, chatId, invoice) {
     return;
   }
   
-  console.log(`✅ DEBUG: Attempting to edit message ${msgData.message_id} in chat ${msgData.chat_id}`);
+   console.log(`✅ DEBUG: Attempting dual notification for invoice ${invoice.id}`);
   const shortName = invoice.fileName.length > 35 ? 
                    invoice.fileName.substring(0, 32) + '...' : 
                    invoice.fileName;
-  const buttons = Markup.inlineKeyboard([
-    [
-      Markup.button.callback('✅ BEZAHLT', `p_${invoice.id}`)
-    ],
-    [
-      Markup.button.callback('🕐 In 2h erinnern', `s_${invoice.id}_2`),
-      Markup.button.callback('⏰ Neue Erinnerung', `r_${invoice.id}`)
-    ]
-  ]);
-  const message = 
-    `🔔 <b>ERINNERUNG</b>\n\n` +
-    `📄 <b>Rechnung:</b> ${shortName}\n` +
-    `💰 <b>Typ:</b> ${invoice.type}\n` +
-    `🏢 <b>Projekt:</b> ${invoice.project}\n` +
-    `📅 <b>Datum:</b> ${invoice.date}\n` +
-    `⏰ <b>Zeit:</b> ${new Date().toLocaleTimeString('de-DE')}\n\n` +
-    `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
-    `⚠️ <b>Diese Rechnung ist noch nicht bezahlt!</b>`;
   
-  // EDIT original message
+  // 1️⃣ ORIGINAL MESSAGE EDITIEREN zu "Erinnerung aktiv"
   try {
-    telegram.editMessageText(
+    await telegram.editMessageText(
       msgData.chat_id,
       msgData.message_id,
-      undefined, // inline_message_id
-      message,
+      undefined,
+      `⏰ <b>Erinnerung aktiv</b>\n\n` +
+      `📄 <b>Datei:</b> ${shortName}\n` +
+      `💰 <b>Typ:</b> ${invoice.type}\n` +
+      `🏢 <b>Projekt:</b> ${invoice.project}\n` +
+      `📅 <b>Datum:</b> ${invoice.date}\n` +
+      `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
+      `🔔 <b>Erinnerung gesendet um:</b> ${new Date().toLocaleTimeString('de-DE')}\n` +
+      `<b>Status:</b> Ausstehend mit Erinnerung 🔔`,
       { 
-        parse_mode: 'HTML', 
-        reply_markup: buttons.reply_markup,
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '✅ BEZAHLT', callback_data: `p_${invoice.id}` }],
+            [
+              { text: '⏰ NEUE ERINNERUNG', callback_data: `r_${invoice.id}` },
+              { text: '🔄 RÜCKGÄNGIG', callback_data: `u_${invoice.id}` }
+            ]
+          ]
+        },
         disable_web_page_preview: true 
       }
     );
-    console.log(`✅ DEBUG: Successfully edited message ${msgData.message_id}`);
+    console.log(`✅ DEBUG: Successfully updated original message to reminder-active status`);
   } catch (error) {
-    console.log('⚠️ DEBUG: Edit failed, sending new:', error.message);
-    // Fallback: neue Nachricht
-    try {
-      telegram.sendMessage(chatId, message, { 
-        parse_mode: 'HTML', 
-        ...buttons,
-        disable_web_page_preview: true 
-      });
-      console.log(`✅ DEBUG: Sent new message as fallback`);
-    } catch (error) {
-      console.log('⚠️ DEBUG: Send Reminder Error:', error.message);
-    }
+    console.log('⚠️ DEBUG: Original message edit failed:', error.message);
   }
-}
+  
+  // 2️⃣ NEUE ERINNERUNGS-NACHRICHT SENDEN
+  const reminderMessage = 
+    `🔔 <b>ERINNERUNG</b>\n\n` +
+    `📄 <b>Rechnung:</b> ${invoice.fileName.substring(0, 35)}\n` +
+    `⚠️ <b>Noch nicht bezahlt!</b>\n\n` +
+    `👆 <b>Klicke unten um zur Original-Rechnung zu springen:</b>`;
+      
+  try {
+    await telegram.sendMessage(chatId, reminderMessage, { 
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [[
+          { text: '📋 Zur Original-Rechnung', callback_data: `goto_${invoice.id}` }
+        ]]
+      },
+      disable_web_page_preview: true 
+    });
+    console.log(`✅ DEBUG: Successfully sent new reminder message for invoice ${invoice.id}`);
+  } catch (error) {
+    console.log('⚠️ DEBUG: New reminder message failed:', error.message);
+  }
+
 
 
 
