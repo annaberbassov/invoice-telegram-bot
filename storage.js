@@ -116,6 +116,100 @@ async function getInvoiceData(invoiceId) {
     return null;
   }
 }
+// ===============================================
+// ACTION DATA FUNCTIONS (NEU)
+// ===============================================
+
+async function saveActionMessageId(actionId, messageId, chatId) {
+  try {
+    await pool.query(
+      'INSERT INTO action_message_storage (action_id, message_id, chat_id) VALUES ($1, $2, $3) ON CONFLICT (action_id) DO UPDATE SET message_id = $2, chat_id = $3, timestamp = NOW()',
+      [actionId, messageId, chatId]
+    );
+    console.log(`✅ Saved message_id ${messageId} for action ${actionId}`);
+  } catch (error) {
+    console.error('❌ Save Action Message Error:', error);
+  }
+}
+
+async function getActionMessageData(actionId) {
+  try {
+    const result = await pool.query(
+      'SELECT message_id, chat_id FROM action_message_storage WHERE action_id = $1',
+      [actionId]
+    );
+    return result.rows[0] || null;
+  } catch (error) {
+    console.error('❌ Get Action Message Error:', error);
+    return null;
+  }
+}
+
+async function saveActionData(action) {
+  try {
+    const result = await pool.query(
+      'INSERT INTO action_data (file_name, action_type, project, deadline, file_id, drive_url, status) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING action_id',
+      [action.fileName, action.actionType, action.project, action.deadline, action.fileId, action.driveUrl, action.status]
+    );
+    const newId = result.rows[0].action_id;
+    console.log(`✅ Saved action data for ID ${newId}`);
+    return newId;
+  } catch (error) {
+    console.error('❌ Save Action Error:', error);
+    return null;
+  }
+}
+
+async function loadAllActions() {
+  try {
+    const result = await pool.query('SELECT * FROM action_data');
+    const actions = {};
+    result.rows.forEach(row => {
+      actions[row.action_id] = {
+        id: row.action_id,
+        fileName: row.file_name,
+        actionType: row.action_type,
+        project: row.project,
+        deadline: row.deadline,
+        fileId: row.file_id,
+        driveUrl: row.drive_url,
+        status: row.status,
+        createdAt: row.created_at
+      };
+    });
+    return actions;
+  } catch (error) {
+    console.error('❌ Load Actions Error:', error);
+    return {};
+  }
+}
+
+async function getActionData(actionId) {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM action_data WHERE action_id = $1',
+      [actionId]
+    );
+    if (result.rows[0]) {
+      const row = result.rows[0];
+      return {
+        id: row.action_id,
+        fileName: row.file_name,
+        actionType: row.action_type,
+        project: row.project,
+        deadline: row.deadline,
+        fileId: row.file_id,
+        driveUrl: row.drive_url,
+        status: row.status,
+        createdAt: row.created_at
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('❌ Get Action Error:', error);
+    return null;
+  }
+}
 
 module.exports = {
   saveMessageId,
@@ -123,7 +217,13 @@ module.exports = {
   removeMessageData,
   saveInvoiceData,
   loadAllInvoices,
-  getInvoiceData
+  getInvoiceData,
+  // Action functions
+  saveActionMessageId,
+  getActionMessageData,
+  saveActionData,
+  loadAllActions,
+  getActionData
 };
 
 
