@@ -4,7 +4,20 @@ const https = require('https');
 // 2. npm modules  
 const { Telegraf, Markup } = require('telegraf');
 // 3. Own modules - 🆕 ERWEITERT!
-const { saveMessageId, getMessageData, saveInvoiceData, loadAllInvoices, getInvoiceData } = require('./storage');
+const { 
+  saveMessageId, 
+  getMessageData, 
+  saveInvoiceData, 
+  loadAllInvoices, 
+  getInvoiceData,
+  // Action functions
+  saveActionMessageId,
+  getActionMessageData,
+  saveActionData,
+  loadAllActions,
+  getActionData
+} = require('./storage');
+
 
 console.log('🚀 A&A Backoffice Bot startet...');
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -14,6 +27,8 @@ const PORT = process.env.PORT || 3000;
 // =============== BOT STATE MANAGEMENT ===============
 const invoices = new Map();
 const reminders = new Map();
+const actions = new Map();
+const actionReminders = new Map();
 
 // 🆕 Load invoices from database on startup
 (async () => {
@@ -22,6 +37,14 @@ const reminders = new Map();
     invoices.set(parseInt(id), invoice);
   }
   console.log(`✅ Loaded ${Object.keys(persistentInvoices).length} invoices from database`);
+})();
+// Load actions from database on startup
+(async () => {
+  const persistentActions = await loadAllActions();
+  for (const [id, action] of Object.entries(persistentActions)) {
+    actions.set(parseInt(id), action);
+  }
+  console.log(`✅ Loaded ${Object.keys(persistentActions).length} actions from database`);
 })();
 
 // HTTP Server mit Webhook Handler
@@ -67,14 +90,15 @@ function getMemoryUsage() {
 }
 
 // =============== APPS SCRIPT NOTIFICATION ===============
-function notifyAppsScript(action, fileId) {
-  console.log(`📤 Apps Script: ${action} für ${fileId}`);
+function notifyAppsScript(action, fileId, projectName = null) {
+  console.log(`📤 Apps Script: ${action} für ${fileId}${projectName ? ` (Projekt: ${projectName})` : ''}`);
   
   const APPS_SCRIPT_WEBHOOK = 'https://script.google.com/macros/s/AKfycbyDONFHC6_mHc5WGA4pzcwjR6c3xLilmwj9z-TLNSeTy99Rg0xNapmy8AW1n7GEOCt0_w/exec';
   
   const payload = JSON.stringify({
     action: action,
-    fileId: fileId
+    fileId: fileId,
+    projectName: projectName  // NEU: Projekt-Name für intelligente Sortierung
   });
 
   const options = {
@@ -102,6 +126,7 @@ function notifyAppsScript(action, fileId) {
     console.error('❌ Apps Script Error:', e);
   }
 }
+
 
 // =============== HELPER FUNCTIONS ===============
 function getNextWeekday(weekday, hour) {
@@ -719,10 +744,508 @@ try {
 }
 }
 
+// ===============================================
+// ACTION SYSTEM HANDLERS (NEU)
+// ===============================================
 
+// ACTION DATA PROCESSING
+bot.hears(/^\/action_data:(.+)/, async (ctx) => {
+  try {
+    const jsonData = ctx.match[1];
+    const actionData = JSON.parse(jsonData);
+    
+    const action = {
+      fileName: actionData.name,
+      actionType: actionData.actionType,
+      project: actionData.project,
+      deadline: actionData.deadline,
+      fileId: actionData.fileId,
+      driveUrl: actionData.url,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+    
+    // Save to database
+    const newId = await saveActionData(action);
+    if (newId) {
+      action.id = newId;
+      actions.set(newId, action);
+      await sendActionMessage(ctx, action);
+    } else {
+      console.error('❌ Failed to save action to database');
+      await ctx.reply('❌ Fehler beim Speichern der Action');
+    }
+    
+  } catch (error) {
+    console.error('Action Data Error:', error);
+    try {
+      await ctx.reply('❌ Fehler beim Verarbeiten der Action-Daten');
+    } catch (e) {
+      console.log('⚠️ Reply Error:', e.message);
+    }
+  }
+});
 
+async function sendActionMessage(ctx, action) {
+  const shortName = action.fileName.length > 35 ? 
+                   action.fileName.substring(0, 32) + '...' : 
+                   action.fileName;
 
+  const deadlineStr = action.deadline ? 
+    new Date(action.deadline).toLocaleDateString('de-DE') : 
+    'Keine Deadline';
 
+  const buttons = Markup.inlineKeyboard([
+    [
+      Markup.button.callback('✅ ERLEDIGT', `a_done_${action.id}`),
+      Markup.button.callback('⏰ ERINNERUNG', `a_remind_${action.id}`)
+    ],
+    [
+      Markup.button.callback('🔄 RÜCKGÄNGIG', `a_undo_${action.id}`)
+    ]
+  ]);
+
+  const message = 
+    `✅ <b>[AKTION] Neue Aufgabe</b>\n\n` +
+    `📄 <b>Datei:</b> ${shortName}\n` +
+    `📋 <b>Typ:</b> ${action.actionType}\n` +
+    `🏢 <b>Projekt:</b> ${action.project || 'Unbekannt'}\n` +
+    `📅 <b>Deadline:</b> ${deadlineStr}\n` +
+    `🔗 <a href="${action.driveUrl}">Drive-Link</a>\n\n` +
+    `<b>Status:</b> Ausstehend ⏳`;
+
+  try {
+    const sentMessage = await ctx.reply(message, { 
+      parse_mode: 'HTML', 
+      ...buttons,
+      disable_web_page_preview: true 
+    });
+
+    // Save message ID
+    await saveActionMessageId(action.id, sentMessage.message_id, ctx.chat.id);
+    console.log(`✅ Saved message_id ${sentMessage.message_id} for action ${action.id}`);
+
+  } catch (error) {
+    console.log('⚠️ Send Message Error:', error.message);
+  }
+}
+
+// ERLEDIGT Button
+bot.action(/^a_done_(.+)/, async (ctx) => {
+  try {
+    const id = parseInt(ctx.match[1]);
+    const action = actions.get(id);
+    
+    if (!action) {
+      try {
+        await ctx.answerCbQuery('❌ Action nicht gefunden');
+      } catch (e) {
+        console.log('⚠️ Query zu alt (erledigt):', e.message);
+      }
+      return;
+    }
+
+    try {
+      await ctx.answerCbQuery('✅ Als erledigt markiert!');
+    } catch (e) {
+      console.log('⚠️ Query zu alt (erledigt answer):', e.message);
+    }
+
+    action.status = 'done';
+    action.completedAt = new Date().toISOString();
+
+    // Apps Script benachrichtigen (mit Projekt für intelligente Sortierung)
+    if (action.fileId) {
+      notifyAppsScript('move_action_done', action.fileId, action.project);
+    }
+
+    const shortName = action.fileName.length > 35 ? 
+                     action.fileName.substring(0, 32) + '...' : 
+                     action.fileName;
+
+    const deadlineStr = action.deadline ? 
+      new Date(action.deadline).toLocaleDateString('de-DE') : 
+      'Keine Deadline';
+
+    // Update Nachricht
+    try {
+      await ctx.editMessageText(
+        `✅ <b>[AKTION] ERLEDIGT</b>\n\n` +
+        `📄 <b>Datei:</b> ${shortName}\n` +
+        `📋 <b>Typ:</b> ${action.actionType}\n` +
+        `🏢 <b>Projekt:</b> ${action.project || 'Unbekannt'}\n` +
+        `📅 <b>Deadline war:</b> ${deadlineStr}\n` +
+        `✅ <b>Erledigt:</b> ${new Date().toLocaleDateString('de-DE')}\n` +
+        `⏰ <b>Zeit:</b> ${new Date().toLocaleTimeString('de-DE')}\n\n` +
+        `🔗 <a href="${action.driveUrl}">Drive-Link</a>`,
+        { 
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('🔄 RÜCKGÄNGIG MACHEN', `a_undo_${action.id}`)]
+          ]),
+          disable_web_page_preview: true 
+        }
+      );
+    } catch (e) {
+      console.log('⚠️ Edit Message Error (erledigt):', e.message);
+    }
+
+    // Erinnerungen löschen
+    clearActionReminders(id);
+
+  } catch (error) {
+    console.log('⚠️ Button Error (erledigt):', error.message);
+  }
+});
+
+// RÜCKGÄNGIG Button
+bot.action(/^a_undo_(.+)/, async (ctx) => {
+  try {
+    const id = parseInt(ctx.match[1]);
+    const action = actions.get(id);
+    
+    if (!action) {
+      try {
+        await ctx.answerCbQuery('❌ Action nicht gefunden');
+      } catch (e) {
+        console.log('⚠️ Query zu alt (rückgängig):', e.message);
+      }
+      return;
+    }
+
+    try {
+      await ctx.answerCbQuery('🔄 Rückgängig gemacht!');
+    } catch (e) {
+      console.log('⚠️ Query zu alt (rückgängig answer):', e.message);
+    }
+
+    action.status = 'pending';
+    delete action.completedAt;
+
+    // Apps Script - zurück zum Action Required Ordner
+    if (action.fileId) {
+      notifyAppsScript('move_to_action_required', action.fileId);
+    }
+
+    // Erinnerungen löschen
+    clearActionReminders(id);
+
+    const shortName = action.fileName.length > 35 ? 
+                     action.fileName.substring(0, 32) + '...' : 
+                     action.fileName;
+
+    const deadlineStr = action.deadline ? 
+      new Date(action.deadline).toLocaleDateString('de-DE') : 
+      'Keine Deadline';
+
+    // Zurück zur Original-Nachricht
+    try {
+      await ctx.editMessageText(
+        `✅ <b>[AKTION] Neue Aufgabe</b>\n\n` +
+        `📄 <b>Datei:</b> ${shortName}\n` +
+        `📋 <b>Typ:</b> ${action.actionType}\n` +
+        `🏢 <b>Projekt:</b> ${action.project || 'Unbekannt'}\n` +
+        `📅 <b>Deadline:</b> ${deadlineStr}\n` +
+        `🔗 <a href="${action.driveUrl}">Drive-Link</a>\n\n` +
+        `<b>Status:</b> Ausstehend ⏳`,
+        { 
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback('✅ ERLEDIGT', `a_done_${action.id}`),
+              Markup.button.callback('⏰ ERINNERUNG', `a_remind_${action.id}`)
+            ],
+            [
+              Markup.button.callback('🔄 RÜCKGÄNGIG', `a_undo_${action.id}`)
+            ]
+          ]),
+          disable_web_page_preview: true 
+        }
+      );
+    } catch (e) {
+      console.log('⚠️ Edit Message Error (rückgängig):', e.message);
+    }
+
+  } catch (error) {
+    console.log('⚠️ Button Error (rückgängig):', error.message);
+  }
+});
+
+// ERINNERUNG Button (gleiches System wie bei Invoices)
+bot.action(/^a_remind_(.+)/, async (ctx) => {
+  try {
+    const id = parseInt(ctx.match[1]);
+    const action = actions.get(id);
+    
+    if (!action) {
+      try {
+        await ctx.answerCbQuery('❌ Action nicht gefunden');
+      } catch (e) {
+        console.log('⚠️ Query zu alt (erinnerung):', e.message);
+      }
+      return;
+    }
+
+    try {
+      await ctx.answerCbQuery('📅 Tag wählen:');
+    } catch (e) {
+      console.log('⚠️ Query zu alt (erinnerung answer):', e.message);
+    }
+
+    const buttons = Markup.inlineKeyboard([
+      [
+        Markup.button.callback('Mo', `ard_${id}_1`),
+        Markup.button.callback('Di', `ard_${id}_2`),
+        Markup.button.callback('Mi', `ard_${id}_3`)
+      ],
+      [
+        Markup.button.callback('Do', `ard_${id}_4`),
+        Markup.button.callback('Fr', `ard_${id}_5`)
+      ]
+    ]);
+
+    const shortName = action.fileName.length > 35 ? 
+                     action.fileName.substring(0, 32) + '...' : 
+                     action.fileName;
+
+    try {
+      await ctx.editMessageText(
+        `📅 <b>Erinnerung setzen</b>\n\n` +
+        `📄 <b>Action:</b> ${shortName}\n\n` +
+        `Welcher Tag?`,
+        { parse_mode: 'HTML', ...buttons }
+      );
+    } catch (e) {
+      console.log('⚠️ Edit Message Error (erinnerung):', e.message);
+    }
+
+  } catch (error) {
+    console.log('⚠️ Button Error (erinnerung):', error.message);
+  }
+});
+
+// Tag gewählt (Action)
+bot.action(/^ard_(.+)_(.+)/, async (ctx) => {
+  try {
+    const id = parseInt(ctx.match[1]);
+    const day = parseInt(ctx.match[2]);
+    
+    try {
+      await ctx.answerCbQuery('🕐 Zeit wählen:');
+    } catch (e) {
+      console.log('⚠️ Query zu alt (tag):', e.message);
+    }
+
+    const buttons = Markup.inlineKeyboard([
+      [
+        Markup.button.callback('10:00', `adt_${id}_${day}_10`),
+        Markup.button.callback('16:00', `adt_${id}_${day}_16`)
+      ]
+    ]);
+
+    const dayNames = ['', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag'];
+    
+    try {
+      await ctx.editMessageText(
+        `🕐 <b>Uhrzeit wählen</b>\n\n` +
+        `📅 <b>Tag:</b> ${dayNames[day]}\n\n` +
+        `Welche Uhrzeit?`,
+        { parse_mode: 'HTML', ...buttons }
+      );
+    } catch (e) {
+      console.log('⚠️ Edit Message Error (tag):', e.message);
+    }
+
+  } catch (error) {
+    console.log('⚠️ Button Error (tag):', error.message);
+  }
+});
+
+// Zeit gewählt - Erinnerung setzen (Action)
+bot.action(/^adt_(.+)_(.+)_(.+)/, async (ctx) => {
+  try {
+    const id = parseInt(ctx.match[1]);
+    const targetDay = parseInt(ctx.match[2]);
+    const targetHour = parseInt(ctx.match[3]);
+    const action = actions.get(id);
+    
+    if (!action) {
+      try {
+        await ctx.answerCbQuery('❌ Action nicht gefunden');
+      } catch (e) {
+        console.log('⚠️ Query zu alt (zeit):', e.message);
+      }
+      return;
+    }
+
+    try {
+      await ctx.answerCbQuery('✅ Erinnerung gesetzt!');
+    } catch (e) {
+      console.log('⚠️ Query zu alt (zeit answer):', e.message);
+    }
+
+    const reminderDate = getNextWeekday(targetDay, targetHour);
+    const now = new Date();
+    const cestNow = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Berlin' }));
+    const timeUntilReminder = reminderDate.getTime() - cestNow.getTime();
+
+    if (timeUntilReminder > 0 && timeUntilReminder < 7 * 24 * 60 * 60 * 1000) {
+      const timerId = setTimeout(() => {
+        sendActionReminderNotification(ctx.telegram, ctx.chat.id, action);
+        actionReminders.delete(`${id}_reminder`);
+      }, timeUntilReminder);
+      
+      clearActionReminders(id);
+      actionReminders.set(`${id}_reminder`, timerId);
+      
+      console.log(`⏰ Action Erinnerung ${id}: ${Math.round(timeUntilReminder/1000/60)} Min`);
+    }
+    
+    const dayNames = ['', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag'];
+    const formattedDate = reminderDate.toLocaleDateString('de-DE');
+    const shortName = action.fileName.length > 35 ? 
+                     action.fileName.substring(0, 32) + '...' : 
+                     action.fileName;
+    
+    const deadlineStr = action.deadline ? 
+      new Date(action.deadline).toLocaleDateString('de-DE') : 
+      'Keine Deadline';
+    
+    try {
+      await ctx.editMessageText(
+        `⏰ <b>[AKTION] Erinnerung gesetzt</b>\n\n` +
+        `📄 <b>Datei:</b> ${shortName}\n` +
+        `📋 <b>Typ:</b> ${action.actionType}\n` +
+        `🏢 <b>Projekt:</b> ${action.project || 'Unbekannt'}\n` +
+        `📅 <b>Deadline:</b> ${deadlineStr}\n` +
+        `🔗 <a href="${action.driveUrl}">Drive-Link</a>\n\n` +
+        `⏰ <b>Erinnerung:</b> ${dayNames[targetDay]}, ${formattedDate} um ${targetHour}:00 Uhr\n` +
+        `<b>Status:</b> Ausstehend mit Erinnerung 🔔`,
+        { 
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback('✅ ERLEDIGT', `a_done_${action.id}`)
+            ],
+            [
+              Markup.button.callback('⏰ NEUE ERINNERUNG', `a_remind_${action.id}`),
+              Markup.button.callback('🔄 RÜCKGÄNGIG', `a_undo_${action.id}`)
+            ]
+          ]),
+          disable_web_page_preview: true 
+        }
+      );
+    } catch (e) {
+      console.log('⚠️ Edit Message Error (zeit):', e.message);
+    }
+    
+  } catch (error) {
+    console.error('Action Erinnerung Fehler:', error);
+  }
+});
+
+// ACTION REMINDER NOTIFICATION
+async function sendActionReminderNotification(telegram, chatId, action) {
+  console.log(`🔍 DEBUG: Looking for action message data for action ${action.id}`);
+  const msgData = await getActionMessageData(action.id);
+  console.log(`📊 DEBUG: Found action message data:`, msgData);
+  
+  if (!msgData || !msgData.message_id || !msgData.chat_id) {
+    console.log(`❌ DEBUG: No valid message data, sending new message instead`);
+
+    const message = 
+      `🔔 <b>[AKTION] ERINNERUNG</b>\n\n` +
+      `📄 <b>Action:</b> ${action.fileName.substring(0, 35)}\n` +
+      `⚠️ <b>Noch nicht erledigt!</b>`;
+      
+    try {
+      telegram.sendMessage(chatId, message, { 
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '📋 Zur Original-Action', callback_data: `goto_a_${action.id}` }
+          ]]
+        },
+        disable_web_page_preview: true 
+      });
+
+      console.log(`✅ DEBUG: Sent fallback reminder for action ${action.id}`);
+    } catch (error) {
+      console.log('⚠️ DEBUG: Fallback reminder failed:', error.message);
+    }
+    return;
+  }
+  
+  console.log(`✅ DEBUG: Attempting dual notification for action ${action.id}`);
+  const shortName = action.fileName.length > 35 ? 
+                   action.fileName.substring(0, 32) + '...' : 
+                   action.fileName;
+  
+  const deadlineStr = action.deadline ? 
+    new Date(action.deadline).toLocaleDateString('de-DE') : 
+    'Keine Deadline';
+  
+  // 1. Original Message editieren
+  try {
+    await telegram.editMessageText(
+      msgData.chat_id,
+      msgData.message_id,
+      undefined,
+      `⏰ <b>[AKTION] Erinnerung aktiv</b>\n\n` +
+      `📄 <b>Datei:</b> ${shortName}\n` +
+      `📋 <b>Typ:</b> ${action.actionType}\n` +
+      `🏢 <b>Projekt:</b> ${action.project || 'Unbekannt'}\n` +
+      `📅 <b>Deadline:</b> ${deadlineStr}\n` +
+      `🔗 <a href="${action.driveUrl}">Drive-Link</a>\n\n` +
+      `🔔 <b>Erinnerung gesendet um:</b> ${new Date().toLocaleTimeString('de-DE')}\n` +
+      `<b>Status:</b> Ausstehend mit Erinnerung 🔔`,
+      { 
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '✅ ERLEDIGT', callback_data: `a_done_${action.id}` }],
+            [
+              { text: '⏰ NEUE ERINNERUNG', callback_data: `a_remind_${action.id}` },
+              { text: '🔄 RÜCKGÄNGIG', callback_data: `a_undo_${action.id}` }
+            ]
+          ]
+        },
+        disable_web_page_preview: true 
+      }
+    );
+    console.log(`✅ DEBUG: Successfully updated original message to reminder-active status`);
+  } catch (error) {
+    console.log('⚠️ DEBUG: Original message edit failed:', error.message);
+  }
+  
+  // 2. Neue Erinnerungs-Nachricht als Reply
+  const reminderMessage = 
+    `🔔 <b>[AKTION] ERINNERUNG</b>\n\n` +
+    `📄 <b>Action:</b> ${action.fileName.substring(0, 35)}\n` +
+    `⚠️ <b>Noch nicht erledigt!</b>\n\n` +
+    `💡 <b>Original-Action siehe oben!</b>`;
+    
+  try {
+    await telegram.sendMessage(chatId, reminderMessage, { 
+      parse_mode: 'HTML',
+      reply_to_message_id: parseInt(msgData.message_id),
+      disable_web_page_preview: true 
+    });
+    console.log(`✅ DEBUG: Successfully sent reminder reply for action ${action.id}`);
+  } catch (error) {
+    console.log('⚠️ DEBUG: Reminder reply failed:', error.message);
+  }
+}
+
+// Helper: Clear Action Reminders
+function clearActionReminders(actionId) {
+  const reminderKey = `${actionId}_reminder`;
+  if (actionReminders.has(reminderKey)) {
+    clearTimeout(actionReminders.get(reminderKey));
+    actionReminders.delete(reminderKey);
+    console.log(`🗑️ Action Timer für ${actionId} gelöscht`);
+  }
+}
 
 
 
