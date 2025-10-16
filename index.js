@@ -49,7 +49,98 @@ const actionReminders = new Map();
 
 // HTTP Server mit Webhook Handler
 const server = http.createServer((req, res) => {
-  if (req.url === '/webhook' && req.method === 'POST') {
+  // NEUER ENDPOINT 1: Get Action Message
+  if (req.url === '/api/get_action_message' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', async () => {
+      try {
+        const { fileId } = JSON.parse(body);
+        
+        // Suche Action
+        let foundAction = null;
+        for (const [id, action] of actions.entries()) {
+          if (action.fileId === fileId) {
+            foundAction = action;
+            break;
+          }
+        }
+        
+        if (!foundAction) {
+          res.writeHead(404, {'Content-Type': 'application/json'});
+          res.end(JSON.stringify({ error: 'Action not found' }));
+          return;
+        }
+        
+        const msgData = await getActionMessageData(foundAction.id);
+        
+        if (!msgData) {
+          res.writeHead(404, {'Content-Type': 'application/json'});
+          res.end(JSON.stringify({ error: 'Message not found' }));
+          return;
+        }
+        
+        res.writeHead(200, {'Content-Type': 'application/json'});
+        res.end(JSON.stringify({
+          action_id: foundAction.id,
+          message_id: msgData.message_id,
+          chat_id: msgData.chat_id,
+          fileName: foundAction.fileName,
+          project: foundAction.project
+        }));
+      } catch (e) {
+        console.error('API Error:', e);
+        res.writeHead(500, {'Content-Type': 'application/json'});
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+  }
+  // NEUER ENDPOINT 2: Send Deadline Warning
+  else if (req.url === '/api/send_deadline_warning' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', async () => {
+      try {
+        const { message_id, chat_id, fileName, actionType, project, deadline, daysUntil } = JSON.parse(body);
+        
+        let urgencyIcon = '🔔';
+        let urgencyText = `Noch ${daysUntil} Tag${daysUntil === 1 ? '' : 'e'}`;
+        
+        if (daysUntil === 0) {
+          urgencyIcon = '🚨';
+          urgencyText = 'HEUTE';
+        } else if (daysUntil === 1) {
+          urgencyIcon = '⚠️';
+          urgencyText = 'MORGEN';
+        }
+        
+        const warningMessage = 
+          `${urgencyIcon} <b>DEADLINE-WARNUNG</b>\n\n` +
+          `📄 <b>Action:</b> ${fileName.substring(0, 40)}\n` +
+          `📋 <b>Typ:</b> ${actionType}\n` +
+          `🏢 <b>Projekt:</b> ${project || 'Unbekannt'}\n` +
+          `📅 <b>Deadline:</b> ${deadline}\n\n` +
+          `⏰ <b>${urgencyText} bis zur Deadline!</b>\n` +
+          `💡 <b>Original-Action siehe oben! ☝️</b>`;
+        
+        await bot.telegram.sendMessage(chat_id, warningMessage, {
+          parse_mode: 'HTML',
+          reply_to_message_id: parseInt(message_id),
+          disable_web_page_preview: true
+        });
+        
+        res.writeHead(200, {'Content-Type': 'application/json'});
+        res.end(JSON.stringify({ success: true }));
+      } catch (e) {
+        console.error('Send warning error:', e);
+        res.writeHead(500, {'Content-Type': 'application/json'});
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+  }
+  // EXISTING WEBHOOK
+  else if (req.url === '/webhook' && req.method === 'POST') {
+
     let body = '';
     req.on('data', chunk => {
       body += chunk.toString();
