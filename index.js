@@ -316,13 +316,15 @@ async function sendInvoiceMessage(ctx, invoice) {
   ]);
 
   const message = 
-    `📋 <b>Neue Rechnung</b>\n\n` +
-    `📄 <b>Datei:</b> ${shortName}\n` +
-    `💰 <b>Typ:</b> ${invoice.type}\n` +
-    `🏢 <b>Projekt:</b> ${invoice.project}\n` +
-    `📅 <b>Datum:</b> ${invoice.date}\n` +
-    `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
-    `<b>Status:</b> Ausstehend ⏳`;
+  `📋 <b>Neue Rechnung</b>\n\n` +
+  `📄 <b>Datei:</b> ${shortName}\n` +
+  `💰 <b>Typ:</b> ${invoice.type}\n` +
+  `🏢 <b>Projekt:</b> ${invoice.project}\n` +
+  `📅 <b>Datum:</b> ${invoice.date}\n` +
+  (invoice.dueDate ? `⏰ <b>Fällig:</b> ${new Date(invoice.dueDate).toLocaleDateString('de-DE')}\n` : '') +
+  `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
+  `<b>Status:</b> Ausstehend ⏳`;
+
 
   try {
   const sentMessage = await ctx.reply(message, { 
