@@ -270,25 +270,25 @@ bot.hears(/^\/invoice_data:(.+)/, async (ctx) => {
       fileName: invoiceData.name,
       type: invoiceData.keyword,
       project: invoiceData.project,
-      date: invoiceData.date,
+      date: invoiceData.date,           // ← Rechnungsdatum
+      dueDate: invoiceData.dueDate,     // ← NEU: Fälligkeitsdatum
+      amount: invoiceData.amount,       // ← NEU: Betrag
       fileId: invoiceData.fileId,
       driveUrl: invoiceData.url,
       status: 'pending',
       createdAt: new Date().toISOString()
     };
     
-// 🆕 NEU: Save to database und ID bekommen
-const newId = await saveInvoiceData(invoice);
-if (newId) {
-  invoice.id = newId;
-  invoices.set(newId, invoice);
-  await sendInvoiceMessage(ctx, invoice);
-} else {
-  console.error('❌ Failed to save invoice to database');
-  await ctx.reply('❌ Fehler beim Speichern der Rechnung');
-}
-
-
+    // 🆕 Save to database und ID bekommen
+    const newId = await saveInvoiceData(invoice);
+    if (newId) {
+      invoice.id = newId;
+      invoices.set(newId, invoice);
+      await sendInvoiceMessage(ctx, invoice);
+    } else {
+      console.error('❌ Failed to save invoice to database');
+      await ctx.reply('❌ Fehler beim Speichern der Rechnung');
+    }
     
   } catch (error) {
     console.error('Invoice Data Error:', error);
@@ -299,6 +299,7 @@ if (newId) {
     }
   }
 });
+
 
 async function sendInvoiceMessage(ctx, invoice) {
   const shortName = invoice.fileName.length > 35 ? 
@@ -315,28 +316,34 @@ async function sendInvoiceMessage(ctx, invoice) {
     ]
   ]);
 
-  const message = 
-  `📋 <b>Neue Rechnung</b>\n\n` +
-  `📄 <b>Datei:</b> ${shortName}\n` +
-  `💰 <b>Typ:</b> ${invoice.type}\n` +
-  `🏢 <b>Projekt:</b> ${invoice.project}\n` +
-  `📅 <b>Datum:</b> ${invoice.date}\n` +
-  (invoice.dueDate ? `⏰ <b>Fällig:</b> ${new Date(invoice.dueDate).toLocaleDateString('de-DE')}\n` : '') +
-  `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
-  `<b>Status:</b> Ausstehend ⏳`;
+  // ✅ Format dates properly
+  const dateStr = invoice.date || 'Nicht gefunden';
+  const dueDateStr = invoice.dueDate ? 
+    invoice.dueDate.replace(/_/g, '.') :  // Format: 2025_10_15 → 15.10.2025
+    null;
+  const amountStr = invoice.amount || '';
 
+  const message = 
+    `📋 <b>Neue Rechnung</b>\n\n` +
+    `📄 <b>Datei:</b> ${shortName}\n` +
+    `💰 <b>Typ:</b> ${invoice.type}\n` +
+    `🏢 <b>Projekt:</b> ${invoice.project}\n` +
+    (amountStr ? `💵 <b>Betrag:</b> ${amountStr}\n` : '') +  // ← NEU: Betrag
+    `📅 <b>Datum:</b> ${dateStr}\n` +
+    (dueDateStr ? `⏰ <b>Fällig:</b> ${dueDateStr}\n` : '') +  // ← NEU: Fälligkeitsdatum
+    `🔗 <a href="${invoice.driveUrl}">Drive-Link</a>\n\n` +
+    `<b>Status:</b> Ausstehend ⏳`;
 
   try {
-  const sentMessage = await ctx.reply(message, { 
-  parse_mode: 'HTML', 
-  ...buttons,
-  disable_web_page_preview: true 
-});
+    const sentMessage = await ctx.reply(message, { 
+      parse_mode: 'HTML', 
+      ...buttons,
+      disable_web_page_preview: true 
+    });
 
-// 🆕 Message ID speichern für später!
-await saveMessageId(invoice.id, sentMessage.message_id, ctx.chat.id);
-console.log(`✅ Saved message_id ${sentMessage.message_id} for invoice ${invoice.id}`);
-
+    // Message ID speichern
+    await saveMessageId(invoice.id, sentMessage.message_id, ctx.chat.id);
+    console.log(`✅ Saved message_id ${sentMessage.message_id} for invoice ${invoice.id}`);
 
   } catch (error) {
     console.log('⚠️ Send Message Error:', error.message);
