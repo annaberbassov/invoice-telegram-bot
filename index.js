@@ -141,11 +141,21 @@ console.log(`📨 Payload: messageId=${messageId}, fileName=${fileName}, daysUnt
           `⏰ <b>${urgencyText} bis zur Deadline!</b>\n` +
           `💡 <b>Original-Action siehe oben! ☝️</b>`;
         
-        await bot.telegram.sendMessage(chat_id, warningMessage, {
-          parse_mode: 'HTML',
-          reply_to_message_id: parseInt(message_id),
-          disable_web_page_preview: true
-        });
+        const sendOptions = {
+  parse_mode: 'HTML',
+  disable_web_page_preview: true
+};
+
+// Nur reply_to_message_id hinzufügen wenn message_id existiert
+if (message_id && !isNaN(message_id) && message_id > 0) {
+  sendOptions.reply_to_message_id = message_id;
+  console.log(`✅ Sende als Reply auf message_id: ${message_id}`);
+} else {
+  console.log(`⚠️ Keine gültige message_id (${message_id}) - sende ohne Reply`);
+}
+
+await bot.telegram.sendMessage(chat_id, warningMessage, sendOptions);
+
         
         res.writeHead(200, {'Content-Type': 'application/json'});
         res.end(JSON.stringify({ success: true }));
