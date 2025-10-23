@@ -114,7 +114,12 @@ if (!foundAction) {
     req.on('data', chunk => { body += chunk.toString(); });
     req.on('end', async () => {
       try {
-        const { message_id, chat_id, fileName, actionType, project, deadline, daysUntil } = JSON.parse(body);
+        const { messageId, fileName, actionType, project, deadline, daysUntil } = JSON.parse(body);
+const message_id = parseInt(messageId);
+const chat_id = '-4900809502';
+
+console.log(`📨 Payload: messageId=${messageId}, fileName=${fileName}, daysUntil=${daysUntil}`);
+
         
         let urgencyIcon = '🔔';
         let urgencyText = `Noch ${daysUntil} Tag${daysUntil === 1 ? '' : 'e'}`;
