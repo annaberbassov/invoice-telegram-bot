@@ -66,11 +66,24 @@ const server = http.createServer((req, res) => {
           }
         }
         
-        if (!foundAction) {
-          res.writeHead(404, {'Content-Type': 'application/json'});
-          res.end(JSON.stringify({ error: 'Action not found' }));
-          return;
-        }
+     if (!foundAction) {
+  // Fallback: Load from database
+  const allActionsFromDb = await loadAllActions();
+  for (const [id, action] of Object.entries(allActionsFromDb)) {
+    if (action.fileId === fileId) {
+      foundAction = action;
+      foundAction.id = parseInt(id);
+      break;
+    }
+  }
+}
+
+if (!foundAction) {
+  res.writeHead(404, {'Content-Type': 'application/json'});
+  res.end(JSON.stringify({ error: 'Action not found' }));
+  return;
+}
+
         
         const msgData = await getActionMessageData(foundAction.id);
         
