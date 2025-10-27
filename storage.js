@@ -210,6 +210,49 @@ async function getActionData(actionId) {
     return null;
   }
 }
+}
+
+// ====== SCHEDULED REMINDERS (NEU) ======
+async function saveScheduledReminder(invoiceId, actionId, reminderTime, chatId, messageId, type) {
+  try {
+    const result = await pool.query(
+      'INSERT INTO scheduled_reminders (invoice_id, action_id, reminder_time, chat_id, message_id, type) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [invoiceId, actionId, reminderTime, chatId, messageId, type]
+    );
+    const newId = result.rows[0].id;
+    console.log(`✅ Reminder in DB gespeichert: ${newId}`);
+    return newId;
+  } catch (error) {
+    console.error('❌ Save Reminder Error:', error);
+    return null;
+  }
+}
+
+async function loadPendingReminders() {
+  try {
+    const now = new Date().toISOString();
+    const result = await pool.query(
+      'SELECT * FROM scheduled_reminders WHERE reminder_time >= $1',
+      [now]
+    );
+    return result.rows || [];
+  } catch (error) {
+    console.error('❌ Load Reminders Error:', error);
+    return [];
+  }
+}
+
+async function deleteScheduledReminder(reminderId) {
+  try {
+    await pool.query(
+      'DELETE FROM scheduled_reminders WHERE id = $1',
+      [reminderId]
+    );
+    console.log(`✅ Reminder gelöscht: ${reminderId}`);
+  } catch (error) {
+    console.error('❌ Delete Reminder Error:', error);
+  }
+}
 
 module.exports = {
   saveMessageId,
@@ -223,7 +266,11 @@ module.exports = {
   getActionMessageData,
   saveActionData,
   loadAllActions,
-  getActionData
+  getActionData,
+  // Reminder functions (NEU)
+  saveScheduledReminder,
+  loadPendingReminders,
+  deleteScheduledReminder
 };
 
 
