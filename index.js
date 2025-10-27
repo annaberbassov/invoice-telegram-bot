@@ -4,19 +4,23 @@ const https = require('https');
 // 2. npm modules  
 const { Telegraf, Markup } = require('telegraf');
 // 3. Own modules - 🆕 ERWEITERT!
-const { 
-  saveMessageId, 
-  getMessageData, 
-  saveInvoiceData, 
-  loadAllInvoices, 
+const {
+  saveMessageId,
+  getMessageData,
+  saveInvoiceData,
+  loadAllInvoices,
   getInvoiceData,
-  // Action functions
   saveActionMessageId,
   getActionMessageData,
   saveActionData,
   loadAllActions,
-  getActionData
+  getActionData,
+  // ✅ NEU - Reminder Functions
+  saveScheduledReminder,
+  loadPendingReminders,
+  deleteScheduledReminder
 } = require('./storage');
+
 
 
 console.log('🚀 A&A Backoffice Bot startet...');
@@ -45,6 +49,79 @@ const actionReminders = new Map();
     actions.set(parseInt(id), action);
   }
   console.log(`✅ Loaded ${Object.keys(persistentActions).length} actions from database`);
+  console.log(`✅ Loaded ${Object.keys(persistentActions).length} actions from database`);
+
+// ✅ NEU - Load scheduled reminders on startup
+(async () => {
+  try {
+    const pendingReminders = await loadPendingReminders();
+    console.log(`📅 Loading ${pendingReminders.length} pending reminders...`);
+    
+    for (const reminder of pendingReminders) {
+      const now = new Date();
+      const reminderTime = new Date(reminder.reminder_time);
+      const timeUntil = reminderTime.getTime() - now.getTime();
+      
+      if (timeUntil > 0) {
+        if (reminder.type === 'invoice') {
+          const invoice = invoices.get(reminder.invoice_id);
+          if (invoice) {
+            const timerId = setTimeout(async () => {
+              try {
+                await bot.telegram.sendMessage(
+                  reminder.chat_id,
+                  `⏰ Erinnerung: Rechnung "${invoice.name}" ist fällig!`,
+                  { reply_to_message_id: reminder.message_id }
+                );
+                await deleteScheduledReminder(reminder.id);
+                reminders.delete(`${reminder.invoice_id}_reminder`);
+
+              } catch (err) {
+                console.error('Reminder send error:', err);
+              }
+            }, timeUntil);
+            
+          reminders.set(`${reminder.invoice_id}_reminder`, timerId);
+console.log(`✅ Restored reminder for invoice ${reminder.invoice_id}`);
+
+
+          }
+        } else if (reminder.type === 'action') {
+          const action = actions.get(reminder.action_id);
+          if (action) {
+            const timerId = setTimeout(async () => {
+              try {
+                await bot.telegram.sendMessage(
+                  reminder.chat_id,
+                  `⏰ Erinnerung: Action "${action.name}" ist fällig!`,
+                  { reply_to_message_id: reminder.message_id }
+                );
+                await deleteScheduledReminder(reminder.id);
+               actionReminders.delete(`${reminder.action_id}_reminder`);
+
+              } catch (err) {
+                console.error('Action reminder send error:', err);
+              }
+            }, timeUntil);
+            
+         actionReminders.set(`${reminder.action_id}_reminder`, timerId);
+console.log(`✅ Restored reminder for action ${reminder.action_id}`);
+
+
+          }
+        }
+      } else {
+        console.log(`⚠️ Missed reminder ${reminder.id} - deleting`);
+        await deleteScheduledReminder(reminder.id);
+      }
+    }
+    
+    console.log(`✅ Restored ${pendingReminders.length} reminders`);
+  } catch (error) {
+    console.error('❌ Load reminders error:', error);
+  }
+})();
+
 })();
 
 // HTTP Server mit Webhook Handler
@@ -656,7 +733,19 @@ const timeUntilReminder = reminderDate.getTime() - cestNow.getTime();
       // Alten Timer löschen falls vorhanden
       clearRemindersForInvoice(id);
       reminders.set(`${id}_reminder`, timerId);
-      
+      // ✅ NEU - In Datenbank speichern
+const messageData = await getMessageData(id);
+if (messageData) {
+  await saveScheduledReminder(
+    id,
+    null,
+    reminderDate.toISOString(),
+    ctx.chat.id,
+    messageData.message_id,
+    'invoice'
+  );
+}
+
       console.log(`⏰ Erinnerung ${id}: ${Math.round(timeUntilReminder/1000/60)} Min`);
     }
     
@@ -1225,7 +1314,19 @@ bot.action(/^adt_(.+)_(.+)_(.+)/, async (ctx) => {
       
       clearActionReminders(id);
       actionReminders.set(`${id}_reminder`, timerId);
-      
+      // ✅ NEU - In Datenbank speichern
+const messageData = await getActionMessageData(id);
+if (messageData) {
+  await saveScheduledReminder(
+    null,
+    id,
+    reminderDate.toISOString(),
+    ctx.chat.id,
+    messageData.message_id,
+    'action'
+  );
+}
+
       console.log(`⏰ Action Erinnerung ${id}: ${Math.round(timeUntilReminder/1000/60)} Min`);
     }
     
