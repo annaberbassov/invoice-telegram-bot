@@ -61,10 +61,9 @@ async function saveInvoiceData(invoice) {
     return newId;
   } catch (error) {
     console.error('❌ Save Invoice Error:', error);
-    return null; // ← HINZUFÜGEN: null zurückgeben statt throw
+    return null;
   }
 }
-
 
 async function loadAllInvoices() {
   try {
@@ -116,8 +115,9 @@ async function getInvoiceData(invoiceId) {
     return null;
   }
 }
+
 // ===============================================
-// ACTION DATA FUNCTIONS (NEU)
+// ACTION DATA FUNCTIONS
 // ===============================================
 
 async function saveActionMessageId(actionId, messageId, chatId) {
@@ -210,9 +210,8 @@ async function getActionData(actionId) {
     return null;
   }
 }
-}
 
-// ====== SCHEDULED REMINDERS (NEU) ======
+// ====== SCHEDULED REMINDERS ======
 async function saveScheduledReminder(invoiceId, actionId, reminderTime, chatId, messageId, type) {
   try {
     const result = await pool.query(
@@ -267,7 +266,7 @@ module.exports = {
   saveActionData,
   loadAllActions,
   getActionData,
-  // Reminder functions (NEU)
+  // Reminder functions
   saveScheduledReminder,
   loadPendingReminders,
   deleteScheduledReminder
