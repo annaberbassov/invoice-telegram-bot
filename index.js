@@ -70,7 +70,8 @@ const actionReminders = new Map();
               try {
                 await bot.telegram.sendMessage(
                   reminder.chat_id,
-                  `⏰ Erinnerung: Rechnung "${invoice.name}" ist fällig!`,
+               `⏰ Erinnerung: Rechnung "${invoice.fileName}" ist fällig!`,
+
                   { reply_to_message_id: reminder.message_id }
                 );
                 await deleteScheduledReminder(reminder.id);
